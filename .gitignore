@@ -1,0 +1,38 @@
+# Cache files
+stock_data_cache.pkl
+price_history_cache.pkl
+
+# Results folders
+results_*/
+
+# Output CSV files
+current_portfolio_*.csv
+portfolio_scores_*.csv
+
+# Generated charts
+*.png
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (optional - uncomment if you don't want to track data)
+# russell2000_tickers.csv
+# russell2000_tickers.txt
