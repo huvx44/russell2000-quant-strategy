@@ -40,10 +40,36 @@ git clone https://github.com/YOUR_USERNAME/russell2000-quant-strategy.git
 cd russell2000-quant-strategy
 
 # Install dependencies
-pip install yfinance pandas numpy matplotlib
+pip install -r requirements.txt
+
+# Or install manually
+pip install yfinance pandas numpy matplotlib Pillow openpyxl
 ```
 
 ### Basic Usage
+
+#### Option A: Graphical User Interface (Recommended for Beginners)
+
+```bash
+# Launch the GUI application
+python gui_app.py
+```
+
+**Features:**
+- 📊 **Portfolio Generator Tab**: Generate current recommendations with one click
+- 📈 **Backtest Tab**: Run historical backtests with configurable parameters
+- 📊 **Results Tab**: View and analyze outputs in tabular format
+- 🖼️ **Chart Viewer**: View performance charts and analytics
+- 💾 **Export to Excel**: Export all results to Excel workbook
+- ⚙️ **Configuration**: View and plan strategy parameters
+
+**GUI Screenshots:**
+- Interactive controls for all parameters
+- Real-time progress indicators
+- Integrated chart viewer
+- Excel export functionality
+
+#### Option B: Command Line Interface
 
 #### 1. Generate Current Portfolio (Fast - Few Seconds with Cache)
 
@@ -185,12 +211,14 @@ AAPL,Apple Inc.,Technology,2.5,3000000000000,175.50
 
 ```
 russell2000-quant-strategy/
+├── gui_app.py                   # 🎨 Graphical user interface
 ├── russell2000_backtest.py      # Full backtest engine
 ├── generate_portfolio.py        # Fast portfolio generator
 ├── smallcap_backtest.py         # Simplified prototype
 ├── update_cache.py              # Cache refresh utility
 ├── russell2000_tickers.csv      # Stock universe (1,959 stocks)
 ├── russell2000_tickers.txt      # Alternative format
+├── requirements.txt             # Python dependencies
 ├── CLAUDE.md                    # Comprehensive documentation
 ├── README.md                    # This file
 └── .gitignore                   # Git ignore rules
