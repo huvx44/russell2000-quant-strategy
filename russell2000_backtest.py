@@ -842,9 +842,14 @@ def generate_quarterly_summary(details_df, initial_balance=100000):
     return summary_df
 
 
-def visualize_quarterly_summary(quarterly_df, output_dir='.'):
+def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=100000):
     """
     분기별 성과 시각화
+
+    Args:
+        quarterly_df: 분기별 요약 데이터프레임
+        output_dir: 출력 디렉토리
+        initial_balance: 초기 투자금 (차트 레이블에 사용)
     """
     if quarterly_df is None or len(quarterly_df) == 0:
         print("분기별 요약 데이터가 없어 시각화를 건너뜁니다.")
@@ -907,11 +912,12 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.'):
     ax.set_xticks(range(len(quarterly_df)))
     ax.set_xticklabels(quarterly_df['Quarter'], rotation=45, ha='right')
 
-    # 포트폴리오 가치 (선) - $100,000 초기 투자 기준
+    # 포트폴리오 가치 (선)
     portfolio_values = quarterly_df['Portfolio_Value'].values
+    balance_label = f'${initial_balance/1000:.0f}K' if initial_balance >= 1000 else f'${initial_balance:.0f}'
     line = ax2.plot(range(len(quarterly_df)), portfolio_values,
                      marker='o', linewidth=2.5, markersize=8, color='#2E86AB',
-                     label='Portfolio Value ($100K start)')
+                     label=f'Portfolio Value ({balance_label} start)')
     ax2.set_ylabel('Portfolio Value ($)', color='#2E86AB', fontweight='bold')
     ax2.tick_params(axis='y', labelcolor='#2E86AB')
 
@@ -919,10 +925,9 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.'):
     ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000:.0f}K'))
 
     # 초기 투자액 기준선 표시
-    initial_balance = portfolio_values[0] - quarterly_df['Cumulative_Profit'].values[0]
     ax2.axhline(y=initial_balance, color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
-    ax.set_title('Trading Activity & Portfolio Growth ($100K Initial)', fontsize=14, fontweight='bold')
+    ax.set_title(f'Trading Activity & Portfolio Growth ({balance_label} Initial)', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3, axis='y')
 
     # Combined legend
@@ -961,7 +966,7 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.'):
     print(f"분기별 요약 차트 저장: {output_dir}/quarterly_summary.png")
 
 
-def save_rebalancing_details(holdings_history, factors_df, output_dir='.'):
+def save_rebalancing_details(holdings_history, factors_df, output_dir='.', initial_balance=100000):
     """
     리밸런싱 상세 내역 저장
 
@@ -969,6 +974,12 @@ def save_rebalancing_details(holdings_history, factors_df, output_dir='.'):
     1. rebalancing_history.csv: 각 리밸런싱 날짜의 보유 종목 목록 (요약)
     2. rebalancing_details.csv: 각 보유 종목의 상세 정보 (포지션, 가격, 수익 등)
     3. quarterly_summary.csv: 분기별 성과 요약
+
+    Args:
+        holdings_history: 보유 내역
+        factors_df: 팩터 데이터프레임
+        output_dir: 출력 디렉토리
+        initial_balance: 초기 투자금 (분기별 요약 계산에 사용)
     """
 
     # 1. 리밸런싱 이력 (요약 - 날짜별 그룹화)
@@ -1031,11 +1042,11 @@ def save_rebalancing_details(holdings_history, factors_df, output_dir='.'):
 
     # 3. 분기별 요약 리포트
     if len(details_df) > 0:
-        # $100,000 초기 투자 기준으로 계산
-        quarterly_summary = generate_quarterly_summary(details_df, initial_balance=100000)
+        # 초기 투자 기준으로 계산
+        quarterly_summary = generate_quarterly_summary(details_df, initial_balance=initial_balance)
         quarterly_summary.to_csv(f'{output_dir}/quarterly_summary.csv', index=False)
         # 분기별 요약 시각화
-        visualize_quarterly_summary(quarterly_summary, output_dir=output_dir)
+        visualize_quarterly_summary(quarterly_summary, output_dir=output_dir, initial_balance=initial_balance)
 
     print(f"\n리밸런싱 내역 저장 완료:")
     print(f"  - 총 {len(holdings_history)}개 포지션 추적")
@@ -1183,6 +1194,17 @@ def main():
         CONFIG['FORCE_REFRESH'] = True
         print("강제 새로고침 모드\n")
 
+    # Initial balance 처리
+    if '--initial-balance' in sys.argv:
+        try:
+            idx = sys.argv.index('--initial-balance')
+            if idx + 1 < len(sys.argv):
+                initial_balance = float(sys.argv[idx + 1])
+                CONFIG['INITIAL_BALANCE'] = initial_balance
+                print(f"초기 투자금 설정: ${initial_balance:,.0f}\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 initial balance 값. 기본값 ${CONFIG['INITIAL_BALANCE']:,.0f} 사용\n")
+
     print("=" * 70)
     print("     Russell 2000 소형주 퀄리티+성장 퀀트 전략 백테스트")
     print("=" * 70)
@@ -1325,7 +1347,7 @@ def main():
     current_factors_df.to_csv(f'{results_dir}/factor_scores.csv', index=False)
 
     # 10. 리밸런싱 상세 내역 저장
-    save_rebalancing_details(holdings, factors_df, output_dir=results_dir)
+    save_rebalancing_details(holdings, factors_df, output_dir=results_dir, initial_balance=CONFIG['INITIAL_BALANCE'])
 
     print("\n저장된 파일:")
     print(f"  폴더: {results_dir}/")

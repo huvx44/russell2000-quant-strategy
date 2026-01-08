@@ -77,6 +77,15 @@ class QuantStrategyGUI:
         self.backtest_end_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
         ttk.Entry(date_frame, textvariable=self.backtest_end_var, width=15).pack(side='left', padx=10)
 
+        # Initial Balance
+        balance_frame = ttk.Frame(control_frame)
+        balance_frame.pack(fill='x', pady=5)
+        ttk.Label(balance_frame, text="Initial Balance ($):").pack(side='left')
+        self.backtest_balance_var = tk.StringVar(value="100000")
+        ttk.Entry(balance_frame, textvariable=self.backtest_balance_var, width=15).pack(side='left', padx=10)
+        ttk.Label(balance_frame, text="(Portfolio capital for backtest)",
+                 font=('Arial', 9), foreground='gray').pack(side='left', padx=10)
+
         # Rebalance Frequency
         rebal_frame = ttk.Frame(control_frame)
         rebal_frame.pack(fill='x', pady=5)
@@ -241,6 +250,16 @@ dynamic configuration updates.
                 cmd = ['python', 'russell2000_backtest.py']
                 if self.backtest_refresh_var.get():
                     cmd.append('--refresh')
+
+                # Add initial balance
+                try:
+                    balance = float(self.backtest_balance_var.get())
+                    cmd.extend(['--initial-balance', str(balance)])
+                except ValueError:
+                    messagebox.showerror("Error", "Invalid initial balance. Please enter a number.")
+                    self.backtest_progress.stop()
+                    self.backtest_run_btn.config(state='normal')
+                    return
 
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           text=True, bufsize=1, universal_newlines=True)
