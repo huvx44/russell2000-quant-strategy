@@ -56,14 +56,13 @@ python gui_app.py
 ```
 
 **Features:**
-- 📊 **Portfolio Generator Tab**: Generate current recommendations with one click
 - 📈 **Backtest Tab**: Run historical backtests with configurable parameters
 - 📊 **Results Tab**: View and analyze outputs in tabular format
 - 🖼️ **Chart Viewer**: View performance charts and analytics
 - 💾 **Export to Excel**: Export all results to Excel workbook
 - ⚙️ **Configuration**: View and plan strategy parameters
 
-**GUI Screenshots:**
+**GUI Interface:**
 - Interactive controls for all parameters
 - Real-time progress indicators
 - Integrated chart viewer
@@ -71,27 +70,13 @@ python gui_app.py
 
 #### Option B: Command Line Interface
 
-#### 1. Generate Current Portfolio (Fast - Few Seconds with Cache)
+Run the backtest (generates current portfolio + historical analysis):
 
 ```bash
-# First run: Downloads data (~5-10 minutes)
-python generate_portfolio.py
+# First run: Downloads data (~30-60 minutes)
+python russell2000_backtest.py
 
 # Subsequent runs: Uses cache (few seconds)
-python generate_portfolio.py
-
-# Force refresh data
-python generate_portfolio.py --refresh
-```
-
-**Output:**
-- `current_portfolio_YYYYMMDD.csv` - Actionable buy list with share counts
-- `portfolio_scores_YYYYMMDD.csv` - All stocks ranked by composite score
-
-#### 2. Run Full Backtest (30-60 min first run, seconds with cache)
-
-```bash
-# Run backtest with caching
 python russell2000_backtest.py
 
 # Force refresh all data
@@ -99,24 +84,30 @@ python russell2000_backtest.py --refresh
 ```
 
 **Output:** (saved in `results_YYYYMMDD_HHMMSS/`)
-- `current_portfolio.csv` - Current recommendations
+- `current_portfolio.csv` - **Actionable buy list** with share counts and prices
 - `backtest_results.png` - Performance charts
 - `quarterly_summary.png` - Quarterly analytics
 - `rebalancing_details.csv` - Trade-by-trade breakdown
 - `quarterly_summary.csv` - Quarterly metrics
 - `factor_scores.csv` - All stocks with factor scores
 
+**The backtest generates everything you need:**
+- Current portfolio recommendations (with exact shares to buy)
+- Historical performance analysis
+- Trade-level P&L tracking
+- Quarterly performance metrics
+
 ## 📈 Using the Output
 
 ### Execute Portfolio Trades
 
-The portfolio generator provides ready-to-execute buy orders:
+The backtest generates ready-to-execute buy orders in `current_portfolio.csv`:
 
 ```python
 import pandas as pd
 
-# Load portfolio
-portfolio = pd.read_csv('current_portfolio_20251231.csv')
+# Load portfolio from latest results folder
+portfolio = pd.read_csv('results_20251231_143052/current_portfolio.csv')
 
 # View buy orders
 print(portfolio[['Ticker', 'Current_Price', 'Shares_to_Buy', 'Actual_Amount']])
@@ -126,6 +117,10 @@ print(portfolio[['Ticker', 'Current_Price', 'Shares_to_Buy', 'Actual_Amount']])
 # TGTX         29.75           168        4998.00
 # SLDE         19.55           255        4985.25
 # ...
+
+# Total investment
+total = portfolio['Actual_Amount'].sum()
+print(f"\nTotal to invest: ${total:,.2f}")
 ```
 
 ### Analyze Trade History
@@ -147,32 +142,20 @@ print(f"Win Rate: {win_rate:.1%}")
 
 ## ⚙️ Configuration
 
-Customize strategy parameters in the `CONFIG` dictionary:
-
-### Portfolio Generator (`generate_portfolio.py`)
-
-```python
-CONFIG = {
-    'INITIAL_BALANCE': 100000,      # Starting capital
-    'TOP_N': 20,                     # Number of stocks
-    'MAX_SECTOR_WEIGHT': 0.30,      # Max 30% per sector
-    'MIN_MARKET_CAP': 300e6,        # Min $300M market cap
-    'MAX_MARKET_CAP': 10e9,         # Max $10B market cap
-    'MIN_AVG_VOLUME': 100000,       # Min daily volume
-    'CACHE_DAYS': 7,                # Cache validity (days)
-}
-```
-
-### Backtest (`russell2000_backtest.py`)
+Customize strategy parameters in the `CONFIG` dictionary (`russell2000_backtest.py`):
 
 ```python
 CONFIG = {
     'START_DATE': '2021-01-01',
     'END_DATE': datetime.now().strftime('%Y-%m-%d'),
-    'TOP_N': 20,
+    'TOP_N': 20,                    # Number of stocks
     'REBALANCE_FREQ': 'Q',          # 'Q' = quarterly, 'M' = monthly
-    'MAX_SECTOR_WEIGHT': 0.30,
-    # ... (same filters as above)
+    'MAX_SECTOR_WEIGHT': 0.30,      # Max 30% per sector
+    'MIN_MARKET_CAP': 300e6,        # Min $300M market cap
+    'MAX_MARKET_CAP': 10e9,         # Max $10B market cap
+    'MIN_AVG_VOLUME': 100000,       # Min daily volume
+    'INITIAL_BALANCE': 100000,      # Starting capital for portfolio
+    'CACHE_DAYS': 7,                # Cache validity (days)
 }
 ```
 
@@ -212,10 +195,8 @@ AAPL,Apple Inc.,Technology,2.5,3000000000000,175.50
 ```
 russell2000-quant-strategy/
 ├── gui_app.py                   # 🎨 Graphical user interface
-├── russell2000_backtest.py      # Full backtest engine
-├── generate_portfolio.py        # Fast portfolio generator
+├── russell2000_backtest.py      # Main backtest engine (generates everything)
 ├── smallcap_backtest.py         # Simplified prototype
-├── update_cache.py              # Cache refresh utility
 ├── russell2000_tickers.csv      # Stock universe (1,959 stocks)
 ├── russell2000_tickers.txt      # Alternative format
 ├── requirements.txt             # Python dependencies
@@ -227,11 +208,15 @@ russell2000-quant-strategy/
 ### Output Files (Ignored by Git)
 
 ```
-stock_data_cache.pkl             # Fundamental data cache (shared)
-price_history_cache.pkl          # Price history cache (backtest)
-current_portfolio_*.csv          # Daily portfolio outputs
-portfolio_scores_*.csv           # All stock rankings
+stock_data_cache.pkl             # Fundamental data cache
+price_history_cache.pkl          # Price history cache
 results_YYYYMMDD_HHMMSS/         # Backtest results folders
+    ├── current_portfolio.csv    # Actionable buy list
+    ├── backtest_results.png     # Performance charts
+    ├── quarterly_summary.png    # Quarterly analytics
+    ├── rebalancing_details.csv  # Trade details
+    ├── quarterly_summary.csv    # Quarterly metrics
+    └── factor_scores.csv        # All stock rankings
 ```
 
 ## 🎓 Strategy Details
@@ -291,33 +276,40 @@ The backtest calculates:
 
 ## 🔄 Cache Management
 
-Both scripts use smart caching to speed up execution:
+The backtest uses smart caching to speed up execution:
 
 ### Cache Types
 
 1. **Fundamental Data** (`stock_data_cache.pkl`)
-   - Shared by both scripts
    - Contains: Market cap, financials, ratios
    - Validity: 7 days (configurable)
+   - First download: ~5-10 minutes
+   - Reused across runs
 
 2. **Price History** (`price_history_cache.pkl`)
-   - Used only by backtest
    - Contains: Historical price data for configured date range
    - Validity: 7 days, invalidated if date range changes
+   - First download: ~25 minutes
+   - Reused across runs
+
+**Performance:**
+- First run: 30-60 minutes (downloads all data)
+- Subsequent runs: Few seconds (uses cache)
 
 ### Refresh Cache
 
 ```bash
-# Delete specific cache
-rm stock_data_cache.pkl
-
 # Delete all cache
 rm *.pkl
 
 # Or use --refresh flag
-python generate_portfolio.py --refresh
 python russell2000_backtest.py --refresh
 ```
+
+**When to refresh:**
+- Before important rebalancing decisions
+- After changing date range (price cache auto-invalidates)
+- If you suspect stale data (check cache age in console)
 
 ## ⚠️ Known Limitations
 

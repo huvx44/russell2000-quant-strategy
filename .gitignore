@@ -5,13 +5,6 @@ price_history_cache.pkl
 # Results folders
 results_*/
 
-# Output CSV files
-current_portfolio_*.csv
-portfolio_scores_*.csv
-
-# Generated charts
-*.png
-
 # Python cache
 __pycache__/
 *.pyc

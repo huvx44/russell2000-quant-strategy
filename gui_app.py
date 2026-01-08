@@ -1,10 +1,16 @@
 """
 Russell 2000 Quant Strategy - GUI Application
 ==============================================
-Graphical interface for portfolio generation and backtesting
+Graphical interface for backtesting and results analysis
 
 Usage:
     python gui_app.py
+
+Features:
+- Run historical backtests with configurable parameters
+- View and analyze results (portfolio, quarterly summary, trades)
+- Display performance charts
+- Export to Excel
 """
 
 import tkinter as tk
@@ -33,68 +39,9 @@ class QuantStrategyGUI:
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
 
         # Create tabs
-        self.create_portfolio_tab()
         self.create_backtest_tab()
         self.create_results_tab()
         self.create_config_tab()
-
-    def create_portfolio_tab(self):
-        """Portfolio Generator Tab"""
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="📊 Portfolio Generator")
-
-        # Title
-        title = ttk.Label(tab, text="Generate Current Portfolio", font=('Arial', 16, 'bold'))
-        title.pack(pady=10)
-
-        # Description
-        desc = ttk.Label(tab, text="Generate actionable buy recommendations for current market conditions",
-                        font=('Arial', 10))
-        desc.pack(pady=5)
-
-        # Control Frame
-        control_frame = ttk.LabelFrame(tab, text="Options", padding=10)
-        control_frame.pack(fill='x', padx=20, pady=10)
-
-        # Refresh checkbox
-        self.portfolio_refresh_var = tk.BooleanVar(value=False)
-        refresh_check = ttk.Checkbutton(control_frame, text="Force Refresh Data (ignore cache)",
-                                       variable=self.portfolio_refresh_var)
-        refresh_check.pack(anchor='w', pady=5)
-
-        # Initial Balance
-        balance_frame = ttk.Frame(control_frame)
-        balance_frame.pack(fill='x', pady=5)
-        ttk.Label(balance_frame, text="Initial Balance ($):").pack(side='left')
-        self.portfolio_balance_var = tk.StringVar(value="100000")
-        ttk.Entry(balance_frame, textvariable=self.portfolio_balance_var, width=15).pack(side='left', padx=10)
-
-        # Portfolio Size
-        size_frame = ttk.Frame(control_frame)
-        size_frame.pack(fill='x', pady=5)
-        ttk.Label(size_frame, text="Portfolio Size (stocks):").pack(side='left')
-        self.portfolio_size_var = tk.StringVar(value="20")
-        ttk.Entry(size_frame, textvariable=self.portfolio_size_var, width=15).pack(side='left', padx=10)
-
-        # Run Button
-        self.portfolio_run_btn = ttk.Button(control_frame, text="🚀 Generate Portfolio",
-                                           command=self.run_portfolio_generator)
-        self.portfolio_run_btn.pack(pady=10)
-
-        # Progress
-        self.portfolio_progress = ttk.Progressbar(tab, mode='indeterminate')
-        self.portfolio_progress.pack(fill='x', padx=20, pady=5)
-
-        # Output
-        output_frame = ttk.LabelFrame(tab, text="Output", padding=10)
-        output_frame.pack(fill='both', expand=True, padx=20, pady=10)
-
-        self.portfolio_output = scrolledtext.ScrolledText(output_frame, height=15, font=('Courier', 10))
-        self.portfolio_output.pack(fill='both', expand=True)
-
-        # Status
-        self.portfolio_status = ttk.Label(tab, text="Ready", font=('Arial', 10))
-        self.portfolio_status.pack(pady=5)
 
     def create_backtest_tab(self):
         """Backtest Tab"""
@@ -282,46 +229,6 @@ dynamic configuration updates.
         """
         ttk.Label(tab, text=info_text, font=('Arial', 9), foreground='gray').pack(pady=10)
 
-    def run_portfolio_generator(self):
-        """Run portfolio generator in separate thread"""
-        def run():
-            self.portfolio_run_btn.config(state='disabled')
-            self.portfolio_progress.start()
-            self.portfolio_status.config(text="Running...")
-            self.portfolio_output.delete(1.0, tk.END)
-
-            try:
-                cmd = ['python', 'generate_portfolio.py']
-                if self.portfolio_refresh_var.get():
-                    cmd.append('--refresh')
-
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                          text=True, bufsize=1, universal_newlines=True)
-
-                for line in process.stdout:
-                    self.portfolio_output.insert(tk.END, line)
-                    self.portfolio_output.see(tk.END)
-                    self.root.update_idletasks()
-
-                process.wait()
-
-                if process.returncode == 0:
-                    self.portfolio_status.config(text="✅ Completed Successfully")
-                    messagebox.showinfo("Success", "Portfolio generated successfully!\nCheck current_portfolio_*.csv")
-                else:
-                    self.portfolio_status.config(text="❌ Error occurred")
-                    messagebox.showerror("Error", "Portfolio generation failed. Check output for details.")
-
-            except Exception as e:
-                self.portfolio_output.insert(tk.END, f"\n\nError: {str(e)}\n")
-                self.portfolio_status.config(text="❌ Error occurred")
-                messagebox.showerror("Error", str(e))
-            finally:
-                self.portfolio_progress.stop()
-                self.portfolio_run_btn.config(state='normal')
-
-        threading.Thread(target=run, daemon=True).start()
-
     def run_backtest(self):
         """Run backtest in separate thread"""
         def run():
@@ -363,17 +270,23 @@ dynamic configuration updates.
         threading.Thread(target=run, daemon=True).start()
 
     def load_latest_portfolio(self):
-        """Load latest portfolio CSV"""
+        """Load latest portfolio CSV from backtest results"""
         try:
-            files = glob.glob('current_portfolio_*.csv')
-            if not files:
-                messagebox.showwarning("No Files", "No portfolio files found. Generate a portfolio first.")
+            folders = glob.glob('results_*/')
+            if not folders:
+                messagebox.showwarning("No Results", "No backtest results found. Run a backtest first.")
                 return
 
-            latest_file = max(files, key=os.path.getctime)
-            df = pd.read_csv(latest_file)
-            self.display_dataframe(df, f"Portfolio: {latest_file}")
-            self.results_status.config(text=f"Loaded: {latest_file}")
+            latest_folder = max(folders, key=os.path.getctime)
+            portfolio_file = os.path.join(latest_folder, 'current_portfolio.csv')
+
+            if not os.path.exists(portfolio_file):
+                messagebox.showwarning("No Portfolio", "Portfolio file not found in results folder.")
+                return
+
+            df = pd.read_csv(portfolio_file)
+            self.display_dataframe(df, f"Portfolio: {portfolio_file}")
+            self.results_status.config(text=f"Loaded: {portfolio_file}")
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load portfolio: {str(e)}")

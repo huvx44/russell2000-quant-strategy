@@ -44,9 +44,10 @@ CONFIG = {
     'MIN_MARKET_CAP': 300e6,        # 최소 시가총액 $300M
     'MAX_MARKET_CAP': 10e9,         # 최대 시가총액 $10B
     'MIN_AVG_VOLUME': 100000,       # 최소 평균 거래량
+    'INITIAL_BALANCE': 100000,      # 초기 투자 금액 ($)
     'BATCH_SIZE': 50,               # API 호출 배치 크기
     'SLEEP_TIME': 1,                # API 호출 간 대기 시간
-    'FUND_CACHE_FILE': 'stock_data_cache.pkl',  # 펀더멘털 캐시 (portfolio generator와 공유)
+    'FUND_CACHE_FILE': 'stock_data_cache.pkl',  # 펀더멘털 캐시
     'PRICE_CACHE_FILE': 'price_history_cache.pkl',  # 가격 이력 캐시
     'CACHE_DAYS': 7,                # 캐시 유효 기간 (일)
     'FORCE_REFRESH': False,         # True = 강제 새로고침
@@ -1045,13 +1046,21 @@ def save_rebalancing_details(holdings_history, factors_df, output_dir='.'):
         print(f"  - 승률: {win_rate:.1%}")
 
 
-def generate_current_portfolio(factors_df, top_n=20, max_sector_weight=0.30, output_dir='.'):
+def generate_current_portfolio(factors_df, top_n=20, max_sector_weight=0.30, output_dir='.', initial_balance=100000):
     """
-    현재 시점의 추천 포트폴리오 생성
+    현재 시점의 추천 포트폴리오 생성 (실행 가능한 매수 주문 포함)
+
+    Args:
+        factors_df: 팩터 데이터프레임
+        top_n: 포트폴리오 종목 수
+        max_sector_weight: 최대 섹터 비중
+        output_dir: 출력 디렉토리
+        initial_balance: 초기 투자 금액 (기본값: $100,000)
     """
     print("\n" + "=" * 70)
     print(f"현재 포트폴리오 추천 (as of {datetime.now().strftime('%Y-%m-%d')})")
     print("=" * 70)
+    print(f"초기 투자 금액: ${initial_balance:,.2f}")
 
     # 포트폴리오 선정 (섹터 제한 적용)
     selected_tickers = select_portfolio(factors_df, top_n=top_n, max_sector_weight=max_sector_weight)
@@ -1062,18 +1071,56 @@ def generate_current_portfolio(factors_df, top_n=20, max_sector_weight=0.30, out
 
     # Equal weight
     portfolio_df['Weight'] = 1.0 / len(portfolio_df)
+    position_size = initial_balance / len(portfolio_df)
+
+    # 현재가 조회
+    print(f"\n현재가 조회 중 ({len(selected_tickers)}개 종목)...")
+    current_prices = {}
+    for ticker in selected_tickers:
+        try:
+            stock = yf.Ticker(ticker)
+            # 최근 1일 데이터로 현재가 가져오기
+            hist = stock.history(period='1d')
+            if not hist.empty:
+                current_price = hist['Close'].iloc[-1]
+                current_prices[ticker] = current_price
+            else:
+                # fallback: info에서 가져오기
+                info = stock.info
+                current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+                if current_price:
+                    current_prices[ticker] = current_price
+                else:
+                    print(f"  {ticker}: 가격 정보 없음")
+                    current_prices[ticker] = None
+        except Exception as e:
+            print(f"  {ticker}: 오류 ({e})")
+            current_prices[ticker] = None
+
+    successful = sum(1 for p in current_prices.values() if p is not None)
+    print(f"현재가 조회 완료: {successful}/{len(selected_tickers)}개 성공")
+
+    # 현재가 및 매수 수량 추가
+    portfolio_df['Current_Price'] = portfolio_df['ticker'].map(current_prices)
+    portfolio_df['Position_Size'] = position_size
+    portfolio_df['Shares_to_Buy'] = (portfolio_df['Position_Size'] / portfolio_df['Current_Price']).apply(
+        lambda x: int(x) if pd.notna(x) else 0
+    )
+    portfolio_df['Actual_Amount'] = portfolio_df['Shares_to_Buy'] * portfolio_df['Current_Price']
 
     # 출력용 DataFrame 구성
     output_df = portfolio_df[[
         'ticker', 'sector', 'market_cap', 'composite_score',
         'quality_score', 'growth_score', 'value_score', 'momentum_score',
-        'roe', 'revenue_growth', 'pe_ratio', 'Weight'
+        'roe', 'revenue_growth', 'pe_ratio', 'Weight',
+        'Current_Price', 'Shares_to_Buy', 'Actual_Amount'
     ]].copy()
 
     output_df.columns = [
         'Ticker', 'Sector', 'Market_Cap', 'Composite_Score',
         'Quality_Score', 'Growth_Score', 'Value_Score', 'Momentum_Score',
-        'ROE', 'Revenue_Growth', 'PE_Ratio', 'Weight'
+        'ROE', 'Revenue_Growth', 'PE_Ratio', 'Weight',
+        'Current_Price', 'Shares_to_Buy', 'Actual_Amount'
     ]
 
     # 포맷팅
@@ -1084,14 +1131,20 @@ def generate_current_portfolio(factors_df, top_n=20, max_sector_weight=0.30, out
     # CSV 저장
     output_df.to_csv(f'{output_dir}/current_portfolio.csv', index=False)
 
+    # 투자 금액 계산
+    total_invested = output_df['Actual_Amount'].sum()
+    cash_remaining = initial_balance - total_invested
+
     # 콘솔 출력
     print(f"\n포트폴리오 구성: {len(output_df)}개 종목 (동일가중)")
-    print(f"\n{'Ticker':<8} {'Sector':<20} {'MCap(B)':>8} {'Weight':>7} {'Score':>7}")
+    print(f"\n{'Ticker':<8} {'Price':>10} {'Shares':>8} {'Amount':>12} {'Score':>7}")
     print("-" * 70)
 
     for _, row in output_df.iterrows():
-        print(f"{row['Ticker']:<8} {row['Sector'][:20]:<20} "
-              f"{row['Market_Cap_B']:>7.2f} {row['Weight_%']:>6.1f}% {row['Composite_Score']:>7.3f}")
+        price_str = f"${row['Current_Price']:.2f}" if pd.notna(row['Current_Price']) else "N/A"
+        shares = int(row['Shares_to_Buy']) if pd.notna(row['Shares_to_Buy']) else 0
+        amount = row['Actual_Amount'] if pd.notna(row['Actual_Amount']) else 0
+        print(f"{row['Ticker']:<8} {price_str:>10} {shares:>8} ${amount:>11,.2f} {row['Composite_Score']:>7.3f}")
 
     # 섹터 분포
     print("\n섹터 분포:")
@@ -1107,7 +1160,16 @@ def generate_current_portfolio(factors_df, top_n=20, max_sector_weight=0.30, out
     print(f"  Value:    {output_df['Value_Score'].mean():>6.2f}")
     print(f"  Momentum: {output_df['Momentum_Score'].mean():>6.2f}")
 
-    print(f"\n포트폴리오 저장: current_portfolio.csv")
+    # 투자 요약
+    print("\n" + "=" * 70)
+    print("투자 요약")
+    print("=" * 70)
+    print(f"초기 금액:      ${initial_balance:>12,.2f}")
+    print(f"총 투자 금액:   ${total_invested:>12,.2f} ({total_invested/initial_balance*100:.1f}%)")
+    print(f"잔액 (미투자):  ${cash_remaining:>12,.2f} ({cash_remaining/initial_balance*100:.1f}%)")
+    print(f"평균 포지션:    ${total_invested/len(output_df):>12,.2f}")
+
+    print(f"\n포트폴리오 저장: {output_dir}/current_portfolio.csv")
 
     return output_df
 
@@ -1227,12 +1289,13 @@ def main():
         
         print(f"{row['ticker']:<8} {row['sector'][:20]:<20} {mcap:>7.2f} {roe:>7.1f}% {rev_gr:>7.1f}% {pe:>7.1f} {row['composite_score']:>7.3f}")
 
-    # 5a. 현재 포트폴리오 생성 (최근 1년 데이터 기반 - generate_portfolio.py와 동일)
+    # 5a. 현재 포트폴리오 생성 (최근 1년 데이터 기반 + 실행 가능한 매수 주문)
     current_portfolio = generate_current_portfolio(
         current_factors_df,  # 최근 1년 데이터로 계산된 팩터 사용
         top_n=CONFIG['TOP_N'],
         max_sector_weight=CONFIG['MAX_SECTOR_WEIGHT'],
-        output_dir=results_dir
+        output_dir=results_dir,
+        initial_balance=CONFIG['INITIAL_BALANCE']
     )
 
     # 6. 백테스트
