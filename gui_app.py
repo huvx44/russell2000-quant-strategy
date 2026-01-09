@@ -633,7 +633,7 @@ dynamic configuration updates.
             # Ask user which file to load
             files = {
                 'Current Portfolio': 'current_portfolio.csv',
-                'Quarterly Summary': 'quarterly_summary.csv',
+                'Period Summary': 'period_summary.csv',
                 'Rebalancing Details': 'rebalancing_details.csv',
                 'Factor Scores': 'factor_scores.csv'
             }
