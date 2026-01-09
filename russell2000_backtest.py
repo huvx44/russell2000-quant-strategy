@@ -1205,6 +1205,40 @@ def main():
         except (ValueError, IndexError) as e:
             print(f"경고: 잘못된 initial balance 값. 기본값 ${CONFIG['INITIAL_BALANCE']:,.0f} 사용\n")
 
+    # Rebalance frequency 처리
+    if '--rebalance-freq' in sys.argv:
+        try:
+            idx = sys.argv.index('--rebalance-freq')
+            if idx + 1 < len(sys.argv):
+                rebal_freq = sys.argv[idx + 1]
+                if rebal_freq in ['Q', 'M']:
+                    CONFIG['REBALANCE_FREQ'] = rebal_freq
+                    print(f"리밸런싱 빈도 설정: {'분기별' if rebal_freq == 'Q' else '월별'}\n")
+                else:
+                    print(f"경고: 잘못된 rebalance frequency 값 (Q 또는 M만 가능). 기본값 사용\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 rebalance frequency 값. 기본값 사용\n")
+
+    # Start date 처리
+    if '--start-date' in sys.argv:
+        try:
+            idx = sys.argv.index('--start-date')
+            if idx + 1 < len(sys.argv):
+                CONFIG['START_DATE'] = sys.argv[idx + 1]
+                print(f"시작일 설정: {CONFIG['START_DATE']}\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 start date 값. 기본값 사용\n")
+
+    # End date 처리
+    if '--end-date' in sys.argv:
+        try:
+            idx = sys.argv.index('--end-date')
+            if idx + 1 < len(sys.argv):
+                CONFIG['END_DATE'] = sys.argv[idx + 1]
+                print(f"종료일 설정: {CONFIG['END_DATE']}\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 end date 값. 기본값 사용\n")
+
     print("=" * 70)
     print("     Russell 2000 소형주 퀄리티+성장 퀀트 전략 백테스트")
     print("=" * 70)

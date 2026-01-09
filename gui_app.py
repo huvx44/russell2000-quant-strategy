@@ -563,6 +563,14 @@ dynamic configuration updates.
                     self.backtest_run_btn.config(state='normal')
                     return
 
+                # Add rebalance frequency
+                rebal_freq = self.backtest_rebal_var.get()
+                cmd.extend(['--rebalance-freq', rebal_freq])
+
+                # Add date range
+                cmd.extend(['--start-date', self.backtest_start_var.get()])
+                cmd.extend(['--end-date', self.backtest_end_var.get()])
+
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           text=True, bufsize=1, universal_newlines=True)
 
