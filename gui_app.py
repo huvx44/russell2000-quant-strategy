@@ -254,14 +254,28 @@ class QuantStrategyGUI:
         self.min_volume = tk.StringVar(value="100000")
         ttk.Entry(constraints_frame, textvariable=self.min_volume, width=10).grid(row=3, column=1, padx=5)
 
+        ttk.Label(constraints_frame, text="Top N Stocks:", width=20).grid(row=4, column=0, sticky='w', pady=3)
+        self.top_n = tk.StringVar(value="20")
+        ttk.Entry(constraints_frame, textvariable=self.top_n, width=10).grid(row=4, column=1, padx=5)
+
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        # Buttons
+        button_frame = ttk.Frame(tab)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="💾 Save Config Preset",
+                  command=self.save_config_preset, width=20).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="📂 Load Config Preset",
+                  command=self.load_config_preset, width=20).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="🔄 Reset to Defaults",
+                  command=self.reset_config_defaults, width=20).pack(side='left', padx=5)
+
         # Info
         info_text = """
-Note: Configuration changes require modifying the script files directly.
-These settings are for reference and planning. Future versions will support
-dynamic configuration updates.
+Configuration will be automatically applied when running backtests.
+Save presets to quickly switch between different strategy configurations.
         """
         ttk.Label(tab, text=info_text, font=('Arial', 9), foreground='gray').pack(pady=10)
 
@@ -428,6 +442,139 @@ dynamic configuration updates.
         # Initial update
         self.update_portfolio_display()
 
+    def save_config_preset(self):
+        """Save current configuration as a preset"""
+        import json
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Save Config Preset")
+        dialog.geometry("400x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Preset Name:", font=('Arial', 11, 'bold')).pack(pady=10)
+        name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=name_var, width=40).pack(pady=5)
+
+        def save():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showwarning("Invalid Name", "Please enter a preset name")
+                return
+
+            config = {
+                'quality_weight': float(self.quality_weight.get()),
+                'growth_weight': float(self.growth_weight.get()),
+                'value_weight': float(self.value_weight.get()),
+                'momentum_weight': float(self.momentum_weight.get()),
+                'max_sector': float(self.max_sector.get()),
+                'min_mcap': float(self.min_mcap.get()),
+                'max_mcap': float(self.max_mcap.get()),
+                'min_volume': int(self.min_volume.get()),
+                'top_n': int(self.top_n.get())
+            }
+
+            # Create config_presets directory if it doesn't exist
+            os.makedirs('config_presets', exist_ok=True)
+
+            filename = f"config_presets/{name.replace(' ', '_')}.json"
+            with open(filename, 'w') as f:
+                json.dump(config, f, indent=4)
+
+            dialog.destroy()
+            messagebox.showinfo("Success", f"Config preset saved: {filename}")
+
+        ttk.Button(dialog, text="Save", command=save, width=15).pack(pady=10)
+
+    def load_config_preset(self):
+        """Load a saved configuration preset"""
+        import json
+
+        # Find all preset files
+        if not os.path.exists('config_presets'):
+            messagebox.showwarning("No Presets", "No config presets found. Save a preset first.")
+            return
+
+        preset_files = glob.glob('config_presets/*.json')
+        if not preset_files:
+            messagebox.showwarning("No Presets", "No config presets found. Save a preset first.")
+            return
+
+        # Create selection dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Load Config Preset")
+        dialog.geometry("500x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Select Preset to Load", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Create listbox
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+        listbox = tk.Listbox(list_frame, font=('Arial', 10))
+        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=listbox.yview)
+        listbox.configure(yscrollcommand=scrollbar.set)
+
+        for preset_file in sorted(preset_files):
+            preset_name = os.path.basename(preset_file).replace('.json', '').replace('_', ' ')
+            listbox.insert(tk.END, preset_name)
+
+        listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        def load_selected():
+            selection = listbox.curselection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a preset")
+                return
+
+            idx = selection[0]
+            preset_file = preset_files[idx]
+
+            try:
+                with open(preset_file, 'r') as f:
+                    config = json.load(f)
+
+                # Load values into GUI
+                self.quality_weight.set(str(config.get('quality_weight', 35)))
+                self.growth_weight.set(str(config.get('growth_weight', 35)))
+                self.value_weight.set(str(config.get('value_weight', 15)))
+                self.momentum_weight.set(str(config.get('momentum_weight', 15)))
+                self.max_sector.set(str(config.get('max_sector', 30)))
+                self.min_mcap.set(str(config.get('min_mcap', 300)))
+                self.max_mcap.set(str(config.get('max_mcap', 10)))
+                self.min_volume.set(str(config.get('min_volume', 100000)))
+                self.top_n.set(str(config.get('top_n', 20)))
+
+                dialog.destroy()
+                messagebox.showinfo("Success", f"Config preset loaded from: {os.path.basename(preset_file)}")
+
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load preset: {str(e)}")
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="Load", command=load_selected, width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
+
+    def reset_config_defaults(self):
+        """Reset configuration to default values"""
+        confirm = messagebox.askyesno("Confirm Reset", "Reset all configuration to default values?")
+        if confirm:
+            self.quality_weight.set("35")
+            self.growth_weight.set("35")
+            self.value_weight.set("15")
+            self.momentum_weight.set("15")
+            self.max_sector.set("30")
+            self.min_mcap.set("300")
+            self.max_mcap.set("10")
+            self.min_volume.set("100000")
+            self.top_n.set("20")
+            messagebox.showinfo("Reset Complete", "Configuration reset to default values")
+
     def load_strategy_handler(self):
         """Load saved strategy configuration from previous backtest"""
         import glob
@@ -570,6 +717,23 @@ dynamic configuration updates.
                 # Add date range
                 cmd.extend(['--start-date', self.backtest_start_var.get()])
                 cmd.extend(['--end-date', self.backtest_end_var.get()])
+
+                # Add configuration parameters from config tab
+                try:
+                    cmd.extend(['--top-n', self.top_n.get()])
+                    cmd.extend(['--max-sector-weight', str(float(self.max_sector.get()) / 100)])  # Convert % to decimal
+                    cmd.extend(['--min-market-cap', str(float(self.min_mcap.get()) * 1e6)])  # Convert M to actual value
+                    cmd.extend(['--max-market-cap', str(float(self.max_mcap.get()) * 1e9)])  # Convert B to actual value
+                    cmd.extend(['--min-avg-volume', self.min_volume.get()])
+                    cmd.extend(['--quality-weight', str(float(self.quality_weight.get()) / 100)])  # Convert % to decimal
+                    cmd.extend(['--growth-weight', str(float(self.growth_weight.get()) / 100)])
+                    cmd.extend(['--value-weight', str(float(self.value_weight.get()) / 100)])
+                    cmd.extend(['--momentum-weight', str(float(self.momentum_weight.get()) / 100)])
+                except ValueError as e:
+                    messagebox.showerror("Error", f"Invalid configuration value: {str(e)}")
+                    self.backtest_progress.stop()
+                    self.backtest_run_btn.config(state='normal')
+                    return
 
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           text=True, bufsize=1, universal_newlines=True)

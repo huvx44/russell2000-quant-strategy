@@ -337,9 +337,18 @@ def calculate_factors(stock_data, sector_info):
     return df
 
 
-def calculate_composite_score(df):
+def calculate_composite_score(df, factor_weights=None):
     """종합 스코어 계산"""
-    
+
+    # Default weights if not provided
+    if factor_weights is None:
+        factor_weights = {
+            'quality': 0.35,
+            'growth': 0.35,
+            'value': 0.15,
+            'momentum': 0.15
+        }
+
     df = df.copy()
     
     def zscore(series):
@@ -415,10 +424,10 @@ def calculate_composite_score(df):
     
     # ========== 종합 스코어 ==========
     df['composite_score'] = (
-        df['quality_score'] * 0.35 +
-        df['growth_score'] * 0.35 +
-        df['value_score'] * 0.15 +
-        df['momentum_score'] * 0.15
+        df['quality_score'] * factor_weights['quality'] +
+        df['growth_score'] * factor_weights['growth'] +
+        df['value_score'] * factor_weights['value'] +
+        df['momentum_score'] * factor_weights['momentum']
     )
     
     return df
@@ -1252,6 +1261,100 @@ def main():
         except (ValueError, IndexError) as e:
             print(f"경고: 잘못된 end date 값. 기본값 사용\n")
 
+    # Top N 처리
+    if '--top-n' in sys.argv:
+        try:
+            idx = sys.argv.index('--top-n')
+            if idx + 1 < len(sys.argv):
+                CONFIG['TOP_N'] = int(sys.argv[idx + 1])
+                print(f"포트폴리오 종목 수 설정: {CONFIG['TOP_N']}\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 top N 값. 기본값 사용\n")
+
+    # Max sector weight 처리
+    if '--max-sector-weight' in sys.argv:
+        try:
+            idx = sys.argv.index('--max-sector-weight')
+            if idx + 1 < len(sys.argv):
+                CONFIG['MAX_SECTOR_WEIGHT'] = float(sys.argv[idx + 1])
+                print(f"최대 섹터 비중 설정: {CONFIG['MAX_SECTOR_WEIGHT']*100:.0f}%\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 max sector weight 값. 기본값 사용\n")
+
+    # Min market cap 처리
+    if '--min-market-cap' in sys.argv:
+        try:
+            idx = sys.argv.index('--min-market-cap')
+            if idx + 1 < len(sys.argv):
+                CONFIG['MIN_MARKET_CAP'] = float(sys.argv[idx + 1])
+                print(f"최소 시가총액 설정: ${CONFIG['MIN_MARKET_CAP']/1e6:.0f}M\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 min market cap 값. 기본값 사용\n")
+
+    # Max market cap 처리
+    if '--max-market-cap' in sys.argv:
+        try:
+            idx = sys.argv.index('--max-market-cap')
+            if idx + 1 < len(sys.argv):
+                CONFIG['MAX_MARKET_CAP'] = float(sys.argv[idx + 1])
+                print(f"최대 시가총액 설정: ${CONFIG['MAX_MARKET_CAP']/1e9:.0f}B\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 max market cap 값. 기본값 사용\n")
+
+    # Min avg volume 처리
+    if '--min-avg-volume' in sys.argv:
+        try:
+            idx = sys.argv.index('--min-avg-volume')
+            if idx + 1 < len(sys.argv):
+                CONFIG['MIN_AVG_VOLUME'] = int(sys.argv[idx + 1])
+                print(f"최소 평균 거래량 설정: {CONFIG['MIN_AVG_VOLUME']:,}\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 min avg volume 값. 기본값 사용\n")
+
+    # Factor weights 저장 (composite score 계산에 사용)
+    FACTOR_WEIGHTS = {
+        'quality': 0.35,
+        'growth': 0.35,
+        'value': 0.15,
+        'momentum': 0.15
+    }
+
+    if '--quality-weight' in sys.argv:
+        try:
+            idx = sys.argv.index('--quality-weight')
+            if idx + 1 < len(sys.argv):
+                FACTOR_WEIGHTS['quality'] = float(sys.argv[idx + 1])
+                print(f"Quality 가중치 설정: {FACTOR_WEIGHTS['quality']*100:.0f}%\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 quality weight 값. 기본값 사용\n")
+
+    if '--growth-weight' in sys.argv:
+        try:
+            idx = sys.argv.index('--growth-weight')
+            if idx + 1 < len(sys.argv):
+                FACTOR_WEIGHTS['growth'] = float(sys.argv[idx + 1])
+                print(f"Growth 가중치 설정: {FACTOR_WEIGHTS['growth']*100:.0f}%\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 growth weight 값. 기본값 사용\n")
+
+    if '--value-weight' in sys.argv:
+        try:
+            idx = sys.argv.index('--value-weight')
+            if idx + 1 < len(sys.argv):
+                FACTOR_WEIGHTS['value'] = float(sys.argv[idx + 1])
+                print(f"Value 가중치 설정: {FACTOR_WEIGHTS['value']*100:.0f}%\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 value weight 값. 기본값 사용\n")
+
+    if '--momentum-weight' in sys.argv:
+        try:
+            idx = sys.argv.index('--momentum-weight')
+            if idx + 1 < len(sys.argv):
+                FACTOR_WEIGHTS['momentum'] = float(sys.argv[idx + 1])
+                print(f"Momentum 가중치 설정: {FACTOR_WEIGHTS['momentum']*100:.0f}%\n")
+        except (ValueError, IndexError) as e:
+            print(f"경고: 잘못된 momentum weight 값. 기본값 사용\n")
+
     print("=" * 70)
     print("     Russell 2000 소형주 퀄리티+성장 퀀트 전략 백테스트")
     print("=" * 70)
@@ -1329,7 +1432,7 @@ def main():
     
     # 4. 팩터 계산 (백테스트용 - 전체 기간 데이터 사용)
     factors_df = calculate_factors(stock_data, sector_info)
-    factors_df = calculate_composite_score(factors_df)
+    factors_df = calculate_composite_score(factors_df, factor_weights=FACTOR_WEIGHTS)
 
     # 4a. 현재 포트폴리오용 팩터 계산 (최근 1년 데이터만 사용 - generate_portfolio와 동일)
     # 최근 1년 데이터로 잘라서 재계산
@@ -1349,7 +1452,7 @@ def main():
 
     # 현재 포트폴리오용 팩터 재계산 (generate_portfolio.py와 동일한 데이터 사용)
     current_factors_df = calculate_factors(current_stock_data, sector_info)
-    current_factors_df = calculate_composite_score(current_factors_df)
+    current_factors_df = calculate_composite_score(current_factors_df, factor_weights=FACTOR_WEIGHTS)
     
     # 5. 상위 종목 출력
     print("\n" + "=" * 70)

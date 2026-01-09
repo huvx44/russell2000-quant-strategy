@@ -32,6 +32,9 @@ portfolio_history.csv
 portfolio_tags.csv
 tagged_portfolios/
 
+# Strategy configuration presets
+config_presets/
+
 # Data files (optional - uncomment if you don't want to track data)
 # russell2000_tickers.csv
 # russell2000_tickers.txt
