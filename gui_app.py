@@ -748,6 +748,55 @@ dynamic configuration updates.
 
     def load_recommended_portfolio_handler(self):
         """Load recommended portfolio from latest backtest results"""
+        # Check if there are existing positions
+        if len(self.portfolio_manager.holdings) > 0:
+            # Ask user if they want to save before loading
+            dialog = tk.Toplevel(self.root)
+            dialog.title("Save Current Portfolio?")
+            dialog.geometry("400x150")
+            dialog.transient(self.root)
+            dialog.grab_set()
+
+            ttk.Label(dialog, text="You have existing positions in your portfolio.",
+                     font=('Arial', 11, 'bold')).pack(pady=10)
+            ttk.Label(dialog, text="Would you like to save before loading recommended portfolio?",
+                     font=('Arial', 10)).pack(pady=5)
+
+            result = {'action': None}
+
+            def save_and_load():
+                result['action'] = 'save'
+                dialog.destroy()
+
+            def load_without_save():
+                result['action'] = 'load'
+                dialog.destroy()
+
+            def cancel():
+                result['action'] = 'cancel'
+                dialog.destroy()
+
+            button_frame = ttk.Frame(dialog)
+            button_frame.pack(pady=15)
+
+            ttk.Button(button_frame, text="Save & Load", command=save_and_load).pack(side='left', padx=5)
+            ttk.Button(button_frame, text="Load Without Saving", command=load_without_save).pack(side='left', padx=5)
+            ttk.Button(button_frame, text="Cancel", command=cancel).pack(side='left', padx=5)
+
+            # Wait for dialog to close
+            dialog.wait_window()
+
+            # Handle user choice
+            if result['action'] == 'cancel':
+                return
+            elif result['action'] == 'save':
+                success = self.portfolio_manager.save_portfolio()
+                if success:
+                    messagebox.showinfo("Saved", f"Portfolio saved to {self.portfolio_manager.portfolio_file}")
+                else:
+                    messagebox.showerror("Error", "Failed to save portfolio")
+                    return
+
         # Get recommended portfolio
         recommended_df = self.portfolio_manager.get_recommended_portfolio()
 
