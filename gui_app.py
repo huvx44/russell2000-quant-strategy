@@ -118,10 +118,15 @@ class QuantStrategyGUI:
         ttk.Radiobutton(rebal_frame, text="Monthly", variable=self.backtest_rebal_var,
                        value="M").pack(side='left')
 
-        # Run Button
-        self.backtest_run_btn = ttk.Button(control_frame, text="🚀 Run Backtest",
-                                          command=self.run_backtest)
-        self.backtest_run_btn.pack(pady=10)
+        # Buttons
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="📂 Load Strategy",
+                  command=self.load_strategy_handler, width=15).pack(side='left', padx=5)
+        self.backtest_run_btn = ttk.Button(button_frame, text="🚀 Run Backtest",
+                                          command=self.run_backtest, width=15)
+        self.backtest_run_btn.pack(side='left', padx=5)
 
         # Progress
         self.backtest_progress = ttk.Progressbar(tab, mode='indeterminate')
@@ -422,6 +427,118 @@ dynamic configuration updates.
 
         # Initial update
         self.update_portfolio_display()
+
+    def load_strategy_handler(self):
+        """Load saved strategy configuration from previous backtest"""
+        import glob
+        import json
+
+        # Find all results folders
+        results_folders = glob.glob('results_*/')
+        if not results_folders:
+            messagebox.showwarning("No Strategies", "No saved strategy configurations found.\nRun a backtest first.")
+            return
+
+        # Sort by creation time (newest first)
+        results_folders.sort(key=os.path.getctime, reverse=True)
+
+        # Create selection dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Load Strategy Configuration")
+        dialog.geometry("700x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="Select Strategy to Load", font=('Arial', 14, 'bold')).pack(pady=10)
+        ttk.Label(dialog, text="Strategy configurations from previous backtests",
+                 font=('Arial', 10)).pack(pady=5)
+
+        # Create frame for list
+        list_frame = ttk.Frame(dialog)
+        list_frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+        # Create Treeview
+        columns = ('Folder', 'Date', 'Start', 'End', 'Balance', 'Rebalance')
+        tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=12)
+
+        tree.heading('Folder', text='Results Folder')
+        tree.heading('Date', text='Created')
+        tree.heading('Start', text='Start Date')
+        tree.heading('End', text='End Date')
+        tree.heading('Balance', text='Initial Balance')
+        tree.heading('Rebalance', text='Rebalance')
+
+        tree.column('Folder', width=150)
+        tree.column('Date', width=120, anchor='center')
+        tree.column('Start', width=90, anchor='center')
+        tree.column('End', width=90, anchor='center')
+        tree.column('Balance', width=100, anchor='e')
+        tree.column('Rebalance', width=80, anchor='center')
+
+        # Populate list
+        for folder in results_folders:
+            config_file = os.path.join(folder, 'strategy_config.json')
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+
+                    # Get folder creation time
+                    created_time = datetime.fromtimestamp(os.path.getctime(folder))
+                    created_str = created_time.strftime('%Y-%m-%d %H:%M')
+
+                    tree.insert('', tk.END, values=(
+                        folder.rstrip('/'),
+                        created_str,
+                        config.get('START_DATE', 'N/A'),
+                        config.get('END_DATE', 'N/A'),
+                        f"${config.get('INITIAL_BALANCE', 0):,.0f}",
+                        config.get('REBALANCE_FREQ', 'N/A')
+                    ))
+                except Exception as e:
+                    print(f"Error reading {config_file}: {e}")
+
+        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+
+        tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        def load_selected():
+            """Load the selected strategy config"""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("No Selection", "Please select a strategy to load")
+                return
+
+            item = tree.item(selected[0])
+            folder = item['values'][0]
+            config_file = os.path.join(folder, 'strategy_config.json')
+
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+
+                # Populate GUI fields
+                self.backtest_start_var.set(config.get('START_DATE', '2021-01-01'))
+                self.backtest_end_var.set(config.get('END_DATE', datetime.now().strftime('%Y-%m-%d')))
+                self.backtest_balance_var.set(str(config.get('INITIAL_BALANCE', 100000)))
+                self.backtest_rebal_var.set(config.get('REBALANCE_FREQ', 'Q'))
+                self.backtest_refresh_var.set(config.get('FORCE_REFRESH', False))
+
+                dialog.destroy()
+                messagebox.showinfo("Strategy Loaded",
+                                  f"Strategy configuration loaded from:\n{folder}\n\nYou can now run the backtest with these settings.")
+
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load strategy: {str(e)}")
+
+        ttk.Button(button_frame, text="Load Selected", command=load_selected, width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
 
     def run_backtest(self):
         """Run backtest in separate thread"""

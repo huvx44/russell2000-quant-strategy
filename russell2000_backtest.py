@@ -1215,6 +1215,19 @@ def main():
     os.makedirs(results_dir, exist_ok=True)
     print(f"\n결과 저장 폴더: {results_dir}/")
 
+    # 전략 설정 저장 (나중에 로드 가능)
+    import json
+    config_copy = CONFIG.copy()
+    # datetime 객체를 문자열로 변환
+    for key, value in config_copy.items():
+        if hasattr(value, 'strftime'):
+            config_copy[key] = value.strftime('%Y-%m-%d')
+
+    strategy_file = os.path.join(results_dir, 'strategy_config.json')
+    with open(strategy_file, 'w', encoding='utf-8') as f:
+        json.dump(config_copy, f, indent=4, ensure_ascii=False)
+    print(f"전략 설정 저장: {strategy_file}")
+
     # 1. 티커 목록 로드
     ticker_df = load_russell2000_tickers('russell2000_tickers.csv')
     tickers = ticker_df['Ticker'].tolist()
