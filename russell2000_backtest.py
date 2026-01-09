@@ -749,21 +749,26 @@ def create_charts(portfolio_returns, benchmark_returns, factors_df, output_dir='
     print(f"\n차트 저장: {output_dir}/backtest_results.png")
 
 
-def generate_quarterly_summary(details_df, initial_balance=100000):
+def generate_quarterly_summary(details_df, initial_balance=100000, rebalance_freq='Q'):
     """
-    분기별 성과 요약 생성
+    기간별 성과 요약 생성 (분기 또는 월별)
 
     Args:
         details_df: 포지션 상세 데이터프레임
         initial_balance: 초기 투자 금액 (기본값: $100,000)
+        rebalance_freq: 리밸런싱 빈도 ('Q' = 분기, 'M' = 월별)
     """
-    # Convert dates to datetime and extract quarter
+    # Convert dates to datetime and extract period
     details_df = details_df.copy()
     details_df['Exit_Date'] = pd.to_datetime(details_df['Exit_Date'], errors='coerce')
-    details_df['Quarter'] = details_df['Exit_Date'].dt.to_period('Q')
+
+    # Use appropriate period based on rebalancing frequency
+    period_type = 'Q' if rebalance_freq == 'Q' else 'M'
+    period_name = 'Quarter' if rebalance_freq == 'Q' else 'Month'
+    details_df['Period'] = details_df['Exit_Date'].dt.to_period(period_type)
 
     # Filter out positions without exit dates
-    closed_positions = details_df[details_df['Quarter'].notna()].copy()
+    closed_positions = details_df[details_df['Period'].notna()].copy()
 
     if len(closed_positions) == 0:
         return pd.DataFrame()
@@ -772,11 +777,11 @@ def generate_quarterly_summary(details_df, initial_balance=100000):
     # Profit is in normalized units, so multiply by initial_balance to get dollar amounts
     closed_positions['Profit_Scaled'] = closed_positions['Profit'] * initial_balance
 
-    # Group by quarter and calculate metrics
-    quarterly_groups = closed_positions.groupby('Quarter')
+    # Group by period and calculate metrics
+    period_groups = closed_positions.groupby('Period')
 
     summary_rows = []
-    for quarter, group in quarterly_groups:
+    for period, group in period_groups:
         # Basic metrics
         n_trades = len(group)
         total_profit = group['Profit_Scaled'].sum()  # Use scaled profit
@@ -809,7 +814,7 @@ def generate_quarterly_summary(details_df, initial_balance=100000):
             top_sectors = 'N/A'
 
         summary_rows.append({
-            'Quarter': str(quarter),
+            'Period': str(period),
             'N_Trades': n_trades,
             'Total_Profit': total_profit,
             'Avg_Return_Pct': total_profit_pct,
@@ -842,32 +847,38 @@ def generate_quarterly_summary(details_df, initial_balance=100000):
     return summary_df
 
 
-def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=100000):
+def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=100000, rebalance_freq='Q'):
     """
-    분기별 성과 시각화
+    기간별 성과 시각화 (분기 또는 월별)
 
     Args:
-        quarterly_df: 분기별 요약 데이터프레임
+        quarterly_df: 기간별 요약 데이터프레임
         output_dir: 출력 디렉토리
         initial_balance: 초기 투자금 (차트 레이블에 사용)
+        rebalance_freq: 리밸런싱 빈도 ('Q' = 분기, 'M' = 월별)
     """
     if quarterly_df is None or len(quarterly_df) == 0:
-        print("분기별 요약 데이터가 없어 시각화를 건너뜁니다.")
+        period_name = '분기별' if rebalance_freq == 'Q' else '월별'
+        print(f"{period_name} 요약 데이터가 없어 시각화를 건너뜁니다.")
         return
+
+    # Set labels based on rebalancing frequency
+    period_label = 'Quarter' if rebalance_freq == 'Q' else 'Month'
+    period_label_kr = '분기별' if rebalance_freq == 'Q' else '월별'
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
-    # 1. 분기별 평균 수익률
+    # 1. 기간별 평균 수익률
     ax = axes[0, 0]
     colors = ['#E74C3C' if x < 0 else '#27AE60' for x in quarterly_df['Avg_Return_Pct'].values]
     bars = ax.bar(range(len(quarterly_df)), quarterly_df['Avg_Return_Pct'].values,
                    color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
     ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
-    ax.set_title('Quarterly Average Returns', fontsize=14, fontweight='bold')
+    ax.set_title(f'{period_label} Average Returns', fontsize=14, fontweight='bold')
     ax.set_ylabel('Average Return per Trade (%)')
-    ax.set_xlabel('Quarter')
+    ax.set_xlabel(period_label)
     ax.set_xticks(range(len(quarterly_df)))
-    ax.set_xticklabels(quarterly_df['Quarter'], rotation=45, ha='right')
+    ax.set_xticklabels(quarterly_df['Period'], rotation=45, ha='right')
     ax.grid(True, alpha=0.3, axis='y')
 
     # Add value labels on bars
@@ -888,9 +899,9 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=10
                      color='#27AE60', alpha=0.2, label='Above 50%')
     ax.set_title('Win Rate Trend', fontsize=14, fontweight='bold')
     ax.set_ylabel('Win Rate (%)')
-    ax.set_xlabel('Quarter')
+    ax.set_xlabel(period_label)
     ax.set_xticks(range(len(quarterly_df)))
-    ax.set_xticklabels(quarterly_df['Quarter'], rotation=45, ha='right')
+    ax.set_xticklabels(quarterly_df['Period'], rotation=45, ha='right')
     ax.set_ylim(0, 100)
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best')
@@ -908,9 +919,9 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=10
                    color='#95A5A6', alpha=0.6, label='Number of Trades')
     ax.set_ylabel('Number of Trades', color='#95A5A6', fontweight='bold')
     ax.tick_params(axis='y', labelcolor='#95A5A6')
-    ax.set_xlabel('Quarter')
+    ax.set_xlabel(period_label)
     ax.set_xticks(range(len(quarterly_df)))
-    ax.set_xticklabels(quarterly_df['Quarter'], rotation=45, ha='right')
+    ax.set_xticklabels(quarterly_df['Period'], rotation=45, ha='right')
 
     # 포트폴리오 가치 (선)
     portfolio_values = quarterly_df['Portfolio_Value'].values
@@ -946,11 +957,11 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=10
                      width, label='Avg Loss', color='#E74C3C', alpha=0.7)
 
     ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
-    ax.set_title('Average Win vs Loss per Quarter', fontsize=14, fontweight='bold')
+    ax.set_title(f'Average Win vs Loss per {period_label}', fontsize=14, fontweight='bold')
     ax.set_ylabel('Return (%)')
-    ax.set_xlabel('Quarter')
+    ax.set_xlabel(period_label)
     ax.set_xticks(x)
-    ax.set_xticklabels(quarterly_df['Quarter'], rotation=45, ha='right')
+    ax.set_xticklabels(quarterly_df['Period'], rotation=45, ha='right')
     ax.legend(loc='best')
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -961,25 +972,27 @@ def visualize_quarterly_summary(quarterly_df, output_dir='.', initial_balance=10
         ax.text(i + width/2, loss - 0.5, f'{loss:.1f}%', ha='center', fontsize=7, va='top')
 
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/quarterly_summary.png', dpi=150, bbox_inches='tight')
+    filename = f'{output_dir}/period_summary.png'
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"분기별 요약 차트 저장: {output_dir}/quarterly_summary.png")
+    print(f"{period_label_kr} 요약 차트 저장: {filename}")
 
 
-def save_rebalancing_details(holdings_history, factors_df, output_dir='.', initial_balance=100000):
+def save_rebalancing_details(holdings_history, factors_df, output_dir='.', initial_balance=100000, rebalance_freq='Q'):
     """
     리밸런싱 상세 내역 저장
 
     세 개의 파일 생성:
     1. rebalancing_history.csv: 각 리밸런싱 날짜의 보유 종목 목록 (요약)
     2. rebalancing_details.csv: 각 보유 종목의 상세 정보 (포지션, 가격, 수익 등)
-    3. quarterly_summary.csv: 분기별 성과 요약
+    3. period_summary.csv: 기간별 성과 요약 (분기 또는 월별)
 
     Args:
         holdings_history: 보유 내역
         factors_df: 팩터 데이터프레임
         output_dir: 출력 디렉토리
-        initial_balance: 초기 투자금 (분기별 요약 계산에 사용)
+        initial_balance: 초기 투자금 (기간별 요약 계산에 사용)
+        rebalance_freq: 리밸런싱 빈도 ('Q' = 분기, 'M' = 월별)
     """
 
     # 1. 리밸런싱 이력 (요약 - 날짜별 그룹화)
@@ -1040,13 +1053,13 @@ def save_rebalancing_details(holdings_history, factors_df, output_dir='.', initi
     details_df = pd.DataFrame(details_rows)
     details_df.to_csv(f'{output_dir}/rebalancing_details.csv', index=False)
 
-    # 3. 분기별 요약 리포트
+    # 3. 기간별 요약 리포트 (분기 또는 월별)
     if len(details_df) > 0:
         # 초기 투자 기준으로 계산
-        quarterly_summary = generate_quarterly_summary(details_df, initial_balance=initial_balance)
-        quarterly_summary.to_csv(f'{output_dir}/quarterly_summary.csv', index=False)
-        # 분기별 요약 시각화
-        visualize_quarterly_summary(quarterly_summary, output_dir=output_dir, initial_balance=initial_balance)
+        period_summary = generate_quarterly_summary(details_df, initial_balance=initial_balance, rebalance_freq=rebalance_freq)
+        period_summary.to_csv(f'{output_dir}/period_summary.csv', index=False)
+        # 기간별 요약 시각화
+        visualize_quarterly_summary(period_summary, output_dir=output_dir, initial_balance=initial_balance, rebalance_freq=rebalance_freq)
 
     print(f"\n리밸런싱 내역 저장 완료:")
     print(f"  - 총 {len(holdings_history)}개 포지션 추적")
@@ -1394,17 +1407,19 @@ def main():
     current_factors_df.to_csv(f'{results_dir}/factor_scores.csv', index=False)
 
     # 10. 리밸런싱 상세 내역 저장
-    save_rebalancing_details(holdings, factors_df, output_dir=results_dir, initial_balance=CONFIG['INITIAL_BALANCE'])
+    save_rebalancing_details(holdings, factors_df, output_dir=results_dir, initial_balance=CONFIG['INITIAL_BALANCE'], rebalance_freq=CONFIG['REBALANCE_FREQ'])
 
+    period_label_kr = '분기별' if CONFIG['REBALANCE_FREQ'] == 'Q' else '월별'
     print("\n저장된 파일:")
     print(f"  폴더: {results_dir}/")
     print("  - current_portfolio.csv (현재 추천 포트폴리오)")
     print("  - backtest_results.png")
+    print("  - period_summary.png ({} 성과 차트)".format(period_label_kr))
     print("  - backtest_daily_returns.csv")
     print("  - factor_scores.csv")
     print("  - rebalancing_history.csv")
     print("  - rebalancing_details.csv (개별 포지션 상세)")
-    print("  - quarterly_summary.csv (분기별 성과 요약)")
+    print("  - period_summary.csv ({} 성과 요약)".format(period_label_kr))
     
     print("\n" + "=" * 70)
     print("백테스트 완료!")
