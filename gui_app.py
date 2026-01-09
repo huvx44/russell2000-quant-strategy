@@ -23,6 +23,12 @@ from datetime import datetime
 import glob
 from PIL import Image, ImageTk
 import io
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
+# Import portfolio manager
+from portfolio_manager import PortfolioManager
 
 class QuantStrategyGUI:
     def __init__(self, root):
@@ -38,9 +44,13 @@ class QuantStrategyGUI:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
 
+        # Initialize portfolio manager
+        self.portfolio_manager = PortfolioManager()
+
         # Create tabs
         self.create_backtest_tab()
         self.create_results_tab()
+        self.create_portfolio_tab()
         self.create_config_tab()
 
     def create_backtest_tab(self):
@@ -237,6 +247,161 @@ These settings are for reference and planning. Future versions will support
 dynamic configuration updates.
         """
         ttk.Label(tab, text=info_text, font=('Arial', 9), foreground='gray').pack(pady=10)
+
+    def create_portfolio_tab(self):
+        """Portfolio Manager Tab"""
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="💼 Portfolio")
+
+        # Title
+        title = ttk.Label(tab, text="Portfolio Manager", font=('Arial', 16, 'bold'))
+        title.pack(pady=10)
+
+        # Description
+        desc = ttk.Label(tab, text="Track your actual holdings with real-time prices and performance",
+                        font=('Arial', 10))
+        desc.pack(pady=5)
+
+        # Control Frame
+        control_frame = ttk.Frame(tab)
+        control_frame.pack(fill='x', padx=20, pady=10)
+
+        # Top row buttons
+        button_frame1 = ttk.Frame(control_frame)
+        button_frame1.pack(fill='x', pady=5)
+
+        ttk.Button(button_frame1, text="📁 Load Recommended",
+                  command=self.load_recommended_portfolio_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame1, text="💾 Import Portfolio",
+                  command=self.import_portfolio_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame1, text="🔄 Refresh Prices",
+                  command=self.refresh_prices_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame1, text="💾 Save",
+                  command=self.save_portfolio_handler).pack(side='left', padx=5)
+
+        # Bottom row buttons
+        button_frame2 = ttk.Frame(control_frame)
+        button_frame2.pack(fill='x', pady=5)
+
+        ttk.Button(button_frame2, text="➕ Add Position",
+                  command=self.add_position_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame2, text="➖ Remove Selected",
+                  command=self.remove_position_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame2, text="📸 Take Snapshot",
+                  command=self.take_snapshot_handler).pack(side='left', padx=5)
+
+        # Summary Panel
+        summary_frame = ttk.LabelFrame(tab, text="Portfolio Summary", padding=10)
+        summary_frame.pack(fill='x', padx=20, pady=10)
+
+        # Summary labels (will be updated dynamically)
+        self.portfolio_summary_labels = {}
+
+        summary_grid = ttk.Frame(summary_frame)
+        summary_grid.pack(fill='x')
+
+        # Row 1
+        row1 = ttk.Frame(summary_grid)
+        row1.pack(fill='x', pady=2)
+        ttk.Label(row1, text="Total Value:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        self.portfolio_summary_labels['total_value'] = ttk.Label(row1, text="$0.00", font=('Arial', 10))
+        self.portfolio_summary_labels['total_value'].pack(side='left', padx=5)
+
+        ttk.Label(row1, text="Cost Basis:", font=('Arial', 10, 'bold')).pack(side='left', padx=(20, 5))
+        self.portfolio_summary_labels['cost_basis'] = ttk.Label(row1, text="$0.00", font=('Arial', 10))
+        self.portfolio_summary_labels['cost_basis'].pack(side='left', padx=5)
+
+        # Row 2
+        row2 = ttk.Frame(summary_grid)
+        row2.pack(fill='x', pady=2)
+        ttk.Label(row2, text="Unrealized P&L:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        self.portfolio_summary_labels['unrealized_pl'] = ttk.Label(row2, text="$0.00 (0.00%)", font=('Arial', 10))
+        self.portfolio_summary_labels['unrealized_pl'].pack(side='left', padx=5)
+
+        ttk.Label(row2, text="Positions:", font=('Arial', 10, 'bold')).pack(side='left', padx=(20, 5))
+        self.portfolio_summary_labels['num_positions'] = ttk.Label(row2, text="0", font=('Arial', 10))
+        self.portfolio_summary_labels['num_positions'].pack(side='left', padx=5)
+
+        # Row 3
+        row3 = ttk.Frame(summary_grid)
+        row3.pack(fill='x', pady=2)
+        ttk.Label(row3, text="Last Updated:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        self.portfolio_summary_labels['last_updated'] = ttk.Label(row3, text="Never", font=('Arial', 10))
+        self.portfolio_summary_labels['last_updated'].pack(side='left', padx=5)
+
+        # Holdings Table Frame
+        table_frame = ttk.LabelFrame(tab, text="Holdings", padding=10)
+        table_frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+        # Create Treeview for holdings
+        columns = ('Ticker', 'Sector', 'Entry_Date', 'Entry_Price', 'Shares', 'Cost_Basis',
+                  'Current_Price', 'Current_Value', 'PL_Dollar', 'PL_Percent')
+
+        self.portfolio_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
+
+        # Define column headings
+        self.portfolio_tree.heading('Ticker', text='Ticker')
+        self.portfolio_tree.heading('Sector', text='Sector')
+        self.portfolio_tree.heading('Entry_Date', text='Entry Date')
+        self.portfolio_tree.heading('Entry_Price', text='Entry $')
+        self.portfolio_tree.heading('Shares', text='Shares')
+        self.portfolio_tree.heading('Cost_Basis', text='Cost Basis')
+        self.portfolio_tree.heading('Current_Price', text='Current $')
+        self.portfolio_tree.heading('Current_Value', text='Current Value')
+        self.portfolio_tree.heading('PL_Dollar', text='P&L ($)')
+        self.portfolio_tree.heading('PL_Percent', text='P&L (%)')
+
+        # Define column widths
+        self.portfolio_tree.column('Ticker', width=60, anchor='center')
+        self.portfolio_tree.column('Sector', width=100)
+        self.portfolio_tree.column('Entry_Date', width=80, anchor='center')
+        self.portfolio_tree.column('Entry_Price', width=70, anchor='e')
+        self.portfolio_tree.column('Shares', width=60, anchor='e')
+        self.portfolio_tree.column('Cost_Basis', width=90, anchor='e')
+        self.portfolio_tree.column('Current_Price', width=70, anchor='e')
+        self.portfolio_tree.column('Current_Value', width=100, anchor='e')
+        self.portfolio_tree.column('PL_Dollar', width=90, anchor='e')
+        self.portfolio_tree.column('PL_Percent', width=70, anchor='e')
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=self.portfolio_tree.yview)
+        self.portfolio_tree.configure(yscrollcommand=scrollbar.set)
+
+        self.portfolio_tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # Charts Panel (placeholder for Phase 6)
+        charts_frame = ttk.LabelFrame(tab, text="Charts", padding=10)
+        charts_frame.pack(fill='both', expand=False, padx=20, pady=10)
+
+        # Create notebook for chart tabs
+        self.portfolio_charts_notebook = ttk.Notebook(charts_frame)
+        self.portfolio_charts_notebook.pack(fill='both', expand=True)
+
+        # Chart tabs (empty for now, will be populated in Phase 6)
+        self.chart_tab_performance = ttk.Frame(self.portfolio_charts_notebook)
+        self.portfolio_charts_notebook.add(self.chart_tab_performance, text="Performance")
+
+        self.chart_tab_sector = ttk.Frame(self.portfolio_charts_notebook)
+        self.portfolio_charts_notebook.add(self.chart_tab_sector, text="Sector Allocation")
+
+        self.chart_tab_positions = ttk.Frame(self.portfolio_charts_notebook)
+        self.portfolio_charts_notebook.add(self.chart_tab_positions, text="Position Details")
+
+        # Placeholder labels in chart tabs
+        ttk.Label(self.chart_tab_performance, text="Performance chart will appear here",
+                 font=('Arial', 10), foreground='gray').pack(expand=True)
+        ttk.Label(self.chart_tab_sector, text="Sector allocation chart will appear here",
+                 font=('Arial', 10), foreground='gray').pack(expand=True)
+        ttk.Label(self.chart_tab_positions, text="Position details chart will appear here",
+                 font=('Arial', 10), foreground='gray').pack(expand=True)
+
+        # Status label
+        self.portfolio_status = ttk.Label(tab, text="Ready", font=('Arial', 10))
+        self.portfolio_status.pack(pady=5)
+
+        # Initial update
+        self.update_portfolio_display()
 
     def run_backtest(self):
         """Run backtest in separate thread"""
@@ -450,6 +615,137 @@ dynamic configuration updates.
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export: {str(e)}")
+
+    # ===================================================================
+    # Portfolio Manager Methods
+    # ===================================================================
+
+    def update_portfolio_display(self):
+        """Update portfolio summary and holdings table"""
+        # Update summary labels
+        summary = self.portfolio_manager.calculate_portfolio_summary()
+
+        self.portfolio_summary_labels['total_value'].config(
+            text=f"${summary['total_value']:,.2f}"
+        )
+        self.portfolio_summary_labels['cost_basis'].config(
+            text=f"${summary['total_cost_basis']:,.2f}"
+        )
+
+        # Color-code P&L
+        pl_color = 'green' if summary['total_unrealized_pl'] >= 0 else 'red'
+        self.portfolio_summary_labels['unrealized_pl'].config(
+            text=f"${summary['total_unrealized_pl']:,.2f} ({summary['total_return_pct']:.2f}%)",
+            foreground=pl_color
+        )
+
+        self.portfolio_summary_labels['num_positions'].config(
+            text=str(summary['num_positions'])
+        )
+
+        # Update last updated timestamp
+        if len(self.portfolio_manager.holdings) > 0:
+            last_updated = self.portfolio_manager.holdings['Last_Updated'].iloc[0]
+            self.portfolio_summary_labels['last_updated'].config(text=last_updated)
+        else:
+            self.portfolio_summary_labels['last_updated'].config(text="Never")
+
+        # Update holdings table
+        self.update_holdings_table()
+
+        # Update status
+        self.portfolio_status.config(text=f"Last refreshed: {summary['num_positions']} positions")
+
+    def update_holdings_table(self):
+        """Refresh holdings Treeview with current data"""
+        # Clear existing rows
+        for item in self.portfolio_tree.get_children():
+            self.portfolio_tree.delete(item)
+
+        # Populate with current holdings
+        for idx, row in self.portfolio_manager.holdings.iterrows():
+            values = (
+                row['Ticker'],
+                row['Sector'],
+                row['Entry_Date'],
+                f"${row['Entry_Price']:.2f}",
+                int(row['Shares_Owned']),
+                f"${row['Cost_Basis']:,.2f}",
+                f"${row['Current_Price']:.2f}",
+                f"${row['Current_Value']:,.2f}",
+                f"${row['Unrealized_PL']:,.2f}",
+                f"{row['Unrealized_PL_Pct']:.2f}%"
+            )
+
+            # Insert row with tag for coloring
+            tag = 'profit' if row['Unrealized_PL'] >= 0 else 'loss'
+            self.portfolio_tree.insert('', tk.END, values=values, tags=(tag,))
+
+        # Configure row colors
+        self.portfolio_tree.tag_configure('profit', foreground='green')
+        self.portfolio_tree.tag_configure('loss', foreground='red')
+
+    def load_recommended_portfolio_handler(self):
+        """Load recommended portfolio from latest backtest results"""
+        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 3:\n"
+                           "- Load current_portfolio.csv from latest results folder\n"
+                           "- Open dialog to adjust actual shares/prices\n"
+                           "- Import to portfolio manager")
+
+    def import_portfolio_handler(self):
+        """Import existing portfolio from CSV file"""
+        self.portfolio_manager.load_portfolio()
+        self.update_portfolio_display()
+        messagebox.showinfo("Success", f"Loaded {len(self.portfolio_manager.holdings)} positions")
+
+    def refresh_prices_handler(self):
+        """Refresh current prices for all holdings"""
+        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 4:\n"
+                           "- Fetch current prices via yfinance\n"
+                           "- Update P&L calculations\n"
+                           "- Show progress bar")
+
+    def save_portfolio_handler(self):
+        """Save portfolio to CSV"""
+        success = self.portfolio_manager.save_portfolio()
+        if success:
+            messagebox.showinfo("Success", f"Portfolio saved to {self.portfolio_manager.portfolio_file}")
+        else:
+            messagebox.showerror("Error", "Failed to save portfolio")
+
+    def add_position_handler(self):
+        """Open dialog to manually add a position"""
+        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 3:\n"
+                           "- Open dialog for manual position entry\n"
+                           "- Fields: Ticker, Entry Date, Entry Price, Shares, Sector\n"
+                           "- Fetch current price and add to portfolio")
+
+    def remove_position_handler(self):
+        """Remove selected position from portfolio"""
+        selected = self.portfolio_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a position to remove")
+            return
+
+        # Get ticker from selected row
+        item = self.portfolio_tree.item(selected[0])
+        ticker = item['values'][0]
+
+        # Confirm deletion
+        confirm = messagebox.askyesno("Confirm Removal",
+                                     f"Remove {ticker} from portfolio?")
+        if confirm:
+            success = self.portfolio_manager.remove_position(ticker)
+            if success:
+                self.update_portfolio_display()
+                messagebox.showinfo("Success", f"Removed {ticker} from portfolio")
+
+    def take_snapshot_handler(self):
+        """Take snapshot of current portfolio for historical tracking"""
+        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 5:\n"
+                           "- Calculate current portfolio metrics\n"
+                           "- Append snapshot to portfolio_history.csv\n"
+                           "- Update historical charts")
 
 
 def main():
