@@ -209,54 +209,85 @@ class QuantStrategyGUI:
         canvas.configure(yscrollcommand=scrollbar.set)
 
         # Factor Weights
-        ttk.Label(scrollable_frame, text="Factor Weights", font=('Arial', 12, 'bold')).pack(anchor='w', pady=5)
+        ttk.Label(scrollable_frame, text="팩터 가중치 (Factor Weights)", font=('Arial', 12, 'bold')).pack(anchor='w', pady=5)
+        ttk.Label(scrollable_frame, text="각 팩터의 중요도를 설정합니다. 합계는 100%가 권장됩니다.",
+                 font=('Arial', 9), foreground='gray').pack(anchor='w', pady=2)
 
         weights_frame = ttk.Frame(scrollable_frame)
         weights_frame.pack(fill='x', pady=5)
 
-        ttk.Label(weights_frame, text="Quality (%):", width=20).grid(row=0, column=0, sticky='w', pady=3)
+        # Quality Factor
+        ttk.Label(weights_frame, text="Quality 퀄리티 (%):", width=20).grid(row=0, column=0, sticky='w', pady=3)
         self.quality_weight = tk.StringVar(value="35")
         ttk.Entry(weights_frame, textvariable=self.quality_weight, width=10).grid(row=0, column=1, padx=5)
+        ttk.Label(weights_frame, text="기업의 재무 건전성 (ROE, ROA, 마진율, 부채비율)",
+                 font=('Arial', 8), foreground='#555').grid(row=0, column=2, sticky='w', padx=10)
 
-        ttk.Label(weights_frame, text="Growth (%):", width=20).grid(row=1, column=0, sticky='w', pady=3)
+        # Growth Factor
+        ttk.Label(weights_frame, text="Growth 성장성 (%):", width=20).grid(row=1, column=0, sticky='w', pady=3)
         self.growth_weight = tk.StringVar(value="35")
         ttk.Entry(weights_frame, textvariable=self.growth_weight, width=10).grid(row=1, column=1, padx=5)
+        ttk.Label(weights_frame, text="매출 및 이익 증가율 (Revenue/Earnings Growth)",
+                 font=('Arial', 8), foreground='#555').grid(row=1, column=2, sticky='w', padx=10)
 
-        ttk.Label(weights_frame, text="Value (%):", width=20).grid(row=2, column=0, sticky='w', pady=3)
+        # Value Factor
+        ttk.Label(weights_frame, text="Value 가치 (%):", width=20).grid(row=2, column=0, sticky='w', pady=3)
         self.value_weight = tk.StringVar(value="15")
         ttk.Entry(weights_frame, textvariable=self.value_weight, width=10).grid(row=2, column=1, padx=5)
+        ttk.Label(weights_frame, text="저평가 여부 (P/E, PEG, P/S 비율 - 낮을수록 좋음)",
+                 font=('Arial', 8), foreground='#555').grid(row=2, column=2, sticky='w', padx=10)
 
-        ttk.Label(weights_frame, text="Momentum (%):", width=20).grid(row=3, column=0, sticky='w', pady=3)
+        # Momentum Factor
+        ttk.Label(weights_frame, text="Momentum 모멘텀 (%):", width=20).grid(row=3, column=0, sticky='w', pady=3)
         self.momentum_weight = tk.StringVar(value="15")
         ttk.Entry(weights_frame, textvariable=self.momentum_weight, width=10).grid(row=3, column=1, padx=5)
+        ttk.Label(weights_frame, text="최근 주가 상승 추세 (12개월-1개월 수익률)",
+                 font=('Arial', 8), foreground='#555').grid(row=3, column=2, sticky='w', padx=10)
 
         ttk.Separator(scrollable_frame, orient='horizontal').pack(fill='x', pady=10)
 
         # Constraints
-        ttk.Label(scrollable_frame, text="Portfolio Constraints", font=('Arial', 12, 'bold')).pack(anchor='w', pady=5)
+        ttk.Label(scrollable_frame, text="포트폴리오 제약조건 (Portfolio Constraints)", font=('Arial', 12, 'bold')).pack(anchor='w', pady=5)
+        ttk.Label(scrollable_frame, text="종목 선정 및 포트폴리오 구성 시 적용할 제한 조건을 설정합니다.",
+                 font=('Arial', 9), foreground='gray').pack(anchor='w', pady=2)
 
         constraints_frame = ttk.Frame(scrollable_frame)
         constraints_frame.pack(fill='x', pady=5)
 
-        ttk.Label(constraints_frame, text="Max Sector Weight (%):", width=20).grid(row=0, column=0, sticky='w', pady=3)
-        self.max_sector = tk.StringVar(value="30")
-        ttk.Entry(constraints_frame, textvariable=self.max_sector, width=10).grid(row=0, column=1, padx=5)
-
-        ttk.Label(constraints_frame, text="Min Market Cap ($M):", width=20).grid(row=1, column=0, sticky='w', pady=3)
-        self.min_mcap = tk.StringVar(value="300")
-        ttk.Entry(constraints_frame, textvariable=self.min_mcap, width=10).grid(row=1, column=1, padx=5)
-
-        ttk.Label(constraints_frame, text="Max Market Cap ($B):", width=20).grid(row=2, column=0, sticky='w', pady=3)
-        self.max_mcap = tk.StringVar(value="10")
-        ttk.Entry(constraints_frame, textvariable=self.max_mcap, width=10).grid(row=2, column=1, padx=5)
-
-        ttk.Label(constraints_frame, text="Min Avg Volume:", width=20).grid(row=3, column=0, sticky='w', pady=3)
-        self.min_volume = tk.StringVar(value="100000")
-        ttk.Entry(constraints_frame, textvariable=self.min_volume, width=10).grid(row=3, column=1, padx=5)
-
-        ttk.Label(constraints_frame, text="Top N Stocks:", width=20).grid(row=4, column=0, sticky='w', pady=3)
+        # Top N
+        ttk.Label(constraints_frame, text="포트폴리오 종목 수:", width=20).grid(row=0, column=0, sticky='w', pady=3)
         self.top_n = tk.StringVar(value="20")
-        ttk.Entry(constraints_frame, textvariable=self.top_n, width=10).grid(row=4, column=1, padx=5)
+        ttk.Entry(constraints_frame, textvariable=self.top_n, width=10).grid(row=0, column=1, padx=5)
+        ttk.Label(constraints_frame, text="포트폴리오에 포함할 종목 개수 (권장: 15-30개)",
+                 font=('Arial', 8), foreground='#555').grid(row=0, column=2, sticky='w', padx=10)
+
+        # Max Sector Weight
+        ttk.Label(constraints_frame, text="최대 섹터 비중 (%):", width=20).grid(row=1, column=0, sticky='w', pady=3)
+        self.max_sector = tk.StringVar(value="30")
+        ttk.Entry(constraints_frame, textvariable=self.max_sector, width=10).grid(row=1, column=1, padx=5)
+        ttk.Label(constraints_frame, text="한 섹터에 집중 투자되는 것을 방지 (분산투자)",
+                 font=('Arial', 8), foreground='#555').grid(row=1, column=2, sticky='w', padx=10)
+
+        # Min Market Cap
+        ttk.Label(constraints_frame, text="최소 시가총액 ($M):", width=20).grid(row=2, column=0, sticky='w', pady=3)
+        self.min_mcap = tk.StringVar(value="300")
+        ttk.Entry(constraints_frame, textvariable=self.min_mcap, width=10).grid(row=2, column=1, padx=5)
+        ttk.Label(constraints_frame, text="너무 작은 기업 제외 (유동성 및 안정성 확보)",
+                 font=('Arial', 8), foreground='#555').grid(row=2, column=2, sticky='w', padx=10)
+
+        # Max Market Cap
+        ttk.Label(constraints_frame, text="최대 시가총액 ($B):", width=20).grid(row=3, column=0, sticky='w', pady=3)
+        self.max_mcap = tk.StringVar(value="10")
+        ttk.Entry(constraints_frame, textvariable=self.max_mcap, width=10).grid(row=3, column=1, padx=5)
+        ttk.Label(constraints_frame, text="스몰캡 범위 유지 (대형주 제외)",
+                 font=('Arial', 8), foreground='#555').grid(row=3, column=2, sticky='w', padx=10)
+
+        # Min Avg Volume
+        ttk.Label(constraints_frame, text="최소 평균 거래량:", width=20).grid(row=4, column=0, sticky='w', pady=3)
+        self.min_volume = tk.StringVar(value="100000")
+        ttk.Entry(constraints_frame, textvariable=self.min_volume, width=10).grid(row=4, column=1, padx=5)
+        ttk.Label(constraints_frame, text="일일 거래량 (유동성 확보, 매매 용이성)",
+                 font=('Arial', 8), foreground='#555').grid(row=4, column=2, sticky='w', padx=10)
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -274,10 +305,17 @@ class QuantStrategyGUI:
 
         # Info
         info_text = """
-Configuration will be automatically applied when running backtests.
-Save presets to quickly switch between different strategy configurations.
+💡 사용 방법:
+1. 위에서 원하는 팩터 가중치와 제약조건을 설정하세요
+2. 백테스트 실행 시 자동으로 적용됩니다
+3. 프리셋 저장 기능으로 여러 전략을 손쉽게 비교할 수 있습니다
+
+📌 팁:
+• 공격적 성장 전략: Growth 50%, Quality 25%, Value 10%, Momentum 15%
+• 보수적 가치 전략: Quality 40%, Value 30%, Growth 20%, Momentum 10%
+• 순수 퀄리티 전략: Quality 70%, Growth 20%, Value 5%, Momentum 5%
         """
-        ttk.Label(tab, text=info_text, font=('Arial', 9), foreground='gray').pack(pady=10)
+        ttk.Label(tab, text=info_text, font=('Arial', 9), foreground='#444', justify='left').pack(pady=10, anchor='w', padx=20)
 
     def create_portfolio_tab(self):
         """Portfolio Manager Tab"""
