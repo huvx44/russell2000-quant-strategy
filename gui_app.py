@@ -400,6 +400,10 @@ dynamic configuration updates.
         self.portfolio_status = ttk.Label(tab, text="Ready", font=('Arial', 10))
         self.portfolio_status.pack(pady=5)
 
+        # Setup column sorting
+        self.sort_column = None
+        self.sort_reverse = False
+
         # Initial update
         self.update_portfolio_display()
 
@@ -656,6 +660,9 @@ dynamic configuration updates.
         # Update status
         self.portfolio_status.config(text=f"Last refreshed: {summary['num_positions']} positions")
 
+        # Update charts
+        self.update_portfolio_charts()
+
     def update_holdings_table(self):
         """Refresh holdings Treeview with current data"""
         # Clear existing rows
@@ -685,12 +692,57 @@ dynamic configuration updates.
         self.portfolio_tree.tag_configure('profit', foreground='green')
         self.portfolio_tree.tag_configure('loss', foreground='red')
 
+        # Setup sorting if not already done
+        if not hasattr(self, 'sorting_setup'):
+            self.setup_column_sorting()
+            self.sorting_setup = True
+
+    def setup_column_sorting(self):
+        """Enable column sorting by clicking headers"""
+        # Sorting state
+        self.sort_column = None
+        self.sort_reverse = False
+
+        def sort_by_column(col):
+            """Sort treeview by column"""
+            # Get all data
+            data = [(self.portfolio_tree.set(child, col), child) for child in self.portfolio_tree.get_children('')]
+
+            # Determine sort order
+            if self.sort_column == col:
+                self.sort_reverse = not self.sort_reverse
+            else:
+                self.sort_reverse = False
+                self.sort_column = col
+
+            # Sort data
+            try:
+                # Try numeric sort
+                data.sort(key=lambda x: float(x[0].replace('$', '').replace(',', '').replace('%', '')),
+                         reverse=self.sort_reverse)
+            except:
+                # Fall back to string sort
+                data.sort(key=lambda x: x[0], reverse=self.sort_reverse)
+
+            # Rearrange items
+            for index, (_, child) in enumerate(data):
+                self.portfolio_tree.move(child, '', index)
+
+        # Bind click event to all column headers
+        for col in self.portfolio_tree['columns']:
+            self.portfolio_tree.heading(col, command=lambda c=col: sort_by_column(c))
+
     def load_recommended_portfolio_handler(self):
         """Load recommended portfolio from latest backtest results"""
-        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 3:\n"
-                           "- Load current_portfolio.csv from latest results folder\n"
-                           "- Open dialog to adjust actual shares/prices\n"
-                           "- Import to portfolio manager")
+        # Get recommended portfolio
+        recommended_df = self.portfolio_manager.get_recommended_portfolio()
+
+        if recommended_df is None:
+            messagebox.showerror("Error", "No backtest results found.\nPlease run a backtest first.")
+            return
+
+        # Open import dialog
+        self.open_import_dialog(recommended_df)
 
     def import_portfolio_handler(self):
         """Import existing portfolio from CSV file"""
@@ -700,10 +752,57 @@ dynamic configuration updates.
 
     def refresh_prices_handler(self):
         """Refresh current prices for all holdings"""
-        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 4:\n"
-                           "- Fetch current prices via yfinance\n"
-                           "- Update P&L calculations\n"
-                           "- Show progress bar")
+        if len(self.portfolio_manager.holdings) == 0:
+            messagebox.showwarning("No Holdings", "No positions to refresh")
+            return
+
+        # Run in separate thread to avoid blocking GUI
+        def refresh_thread():
+            # Create progress dialog
+            progress_dialog = tk.Toplevel(self.root)
+            progress_dialog.title("Refreshing Prices")
+            progress_dialog.geometry("400x150")
+            progress_dialog.transient(self.root)
+            progress_dialog.grab_set()
+
+            ttk.Label(progress_dialog, text="Updating prices...", font=('Arial', 12, 'bold')).pack(pady=10)
+
+            # Progress bar
+            progress_var = tk.IntVar()
+            progress_bar = ttk.Progressbar(progress_dialog, variable=progress_var, maximum=100, length=350)
+            progress_bar.pack(pady=10)
+
+            # Status label
+            status_label = ttk.Label(progress_dialog, text="Starting...", font=('Arial', 10))
+            status_label.pack(pady=5)
+
+            def progress_callback(current, total, ticker):
+                """Update progress bar and label"""
+                percent = int((current / total) * 100)
+                progress_var.set(percent)
+                status_label.config(text=f"Updating {ticker} ({current}/{total})...")
+                progress_dialog.update()
+
+            # Refresh prices
+            result = self.portfolio_manager.refresh_all_prices(progress_callback=progress_callback)
+
+            # Update display
+            self.update_portfolio_display()
+
+            # Close progress dialog
+            progress_dialog.destroy()
+
+            # Show result
+            msg = f"Price refresh complete!\n\n"
+            msg += f"✓ {result['success']} succeeded\n"
+            if result['failed'] > 0:
+                msg += f"✗ {result['failed']} failed\n"
+            msg += f"\nTotal: {result['total']} positions"
+
+            messagebox.showinfo("Refresh Complete", msg)
+
+        # Start thread
+        threading.Thread(target=refresh_thread, daemon=True).start()
 
     def save_portfolio_handler(self):
         """Save portfolio to CSV"""
@@ -715,10 +814,7 @@ dynamic configuration updates.
 
     def add_position_handler(self):
         """Open dialog to manually add a position"""
-        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 3:\n"
-                           "- Open dialog for manual position entry\n"
-                           "- Fields: Ticker, Entry Date, Entry Price, Shares, Sector\n"
-                           "- Fetch current price and add to portfolio")
+        self.open_add_position_dialog()
 
     def remove_position_handler(self):
         """Remove selected position from portfolio"""
@@ -740,12 +836,437 @@ dynamic configuration updates.
                 self.update_portfolio_display()
                 messagebox.showinfo("Success", f"Removed {ticker} from portfolio")
 
+    def update_portfolio_charts(self):
+        """Update all charts in the charts panel"""
+        self.plot_performance_chart()
+        self.plot_sector_allocation()
+        self.plot_position_details()
+
+    def plot_performance_chart(self):
+        """Plot historical performance chart"""
+        # Clear existing
+        for widget in self.chart_tab_performance.winfo_children():
+            widget.destroy()
+
+        if len(self.portfolio_manager.history) == 0:
+            ttk.Label(self.chart_tab_performance, text="No historical data yet. Take snapshots to see performance over time.",
+                     font=('Arial', 10), foreground='gray').pack(expand=True)
+            return
+
+        # Create matplotlib figure
+        fig = Figure(figsize=(8, 4), dpi=100)
+        ax = fig.add_subplot(111)
+
+        # Plot data
+        history = self.portfolio_manager.history
+        dates = pd.to_datetime(history['Date'])
+        values = history['Total_Value']
+        cost_basis = history['Total_Cost_Basis']
+
+        ax.plot(dates, values, marker='o', linewidth=2, markersize=6, color='#2E86AB', label='Portfolio Value')
+        ax.plot(dates, cost_basis, linestyle='--', linewidth=1.5, color='gray', alpha=0.7, label='Cost Basis')
+
+        # Fill area between lines
+        ax.fill_between(dates, values, cost_basis,
+                        where=(values >= cost_basis), color='green', alpha=0.2, label='Profit')
+        ax.fill_between(dates, values, cost_basis,
+                        where=(values < cost_basis), color='red', alpha=0.2, label='Loss')
+
+        ax.set_title('Portfolio Performance Over Time', fontweight='bold')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Value ($)')
+        ax.legend(loc='best')
+        ax.grid(True, alpha=0.3)
+        fig.autofmt_xdate()
+
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.chart_tab_performance)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+
+    def plot_sector_allocation(self):
+        """Plot sector allocation pie chart"""
+        # Clear existing
+        for widget in self.chart_tab_sector.winfo_children():
+            widget.destroy()
+
+        if len(self.portfolio_manager.holdings) == 0:
+            ttk.Label(self.chart_tab_sector, text="No positions to display",
+                     font=('Arial', 10), foreground='gray').pack(expand=True)
+            return
+
+        # Group by sector
+        holdings = self.portfolio_manager.holdings
+        sector_values = holdings.groupby('Sector')['Current_Value'].sum()
+
+        if len(sector_values) == 0:
+            ttk.Label(self.chart_tab_sector, text="No sector data available",
+                     font=('Arial', 10), foreground='gray').pack(expand=True)
+            return
+
+        # Create matplotlib figure
+        fig = Figure(figsize=(8, 4), dpi=100)
+        ax = fig.add_subplot(111)
+
+        # Pie chart
+        colors = plt.cm.Set3(range(len(sector_values)))
+        wedges, texts, autotexts = ax.pie(sector_values, labels=sector_values.index,
+                                           autopct='%1.1f%%', startangle=90, colors=colors)
+
+        # Make percentage text more readable
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+
+        ax.set_title('Portfolio Allocation by Sector', fontweight='bold')
+        ax.axis('equal')
+
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.chart_tab_sector)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+
+    def plot_position_details(self):
+        """Plot position details bar chart"""
+        # Clear existing
+        for widget in self.chart_tab_positions.winfo_children():
+            widget.destroy()
+
+        if len(self.portfolio_manager.holdings) == 0:
+            ttk.Label(self.chart_tab_positions, text="No positions to display",
+                     font=('Arial', 10), foreground='gray').pack(expand=True)
+            return
+
+        # Sort by P&L percentage
+        holdings = self.portfolio_manager.holdings.sort_values('Unrealized_PL_Pct', ascending=False)
+
+        # Create matplotlib figure
+        fig = Figure(figsize=(8, 4), dpi=100)
+        ax = fig.add_subplot(111)
+
+        # Bar chart
+        tickers = holdings['Ticker']
+        pl_pct = holdings['Unrealized_PL_Pct']
+
+        colors = ['green' if x >= 0 else 'red' for x in pl_pct]
+        bars = ax.bar(range(len(tickers)), pl_pct, color=colors, alpha=0.7)
+
+        ax.set_title('P&L by Position', fontweight='bold')
+        ax.set_xlabel('Ticker')
+        ax.set_ylabel('P&L (%)')
+        ax.set_xticks(range(len(tickers)))
+        ax.set_xticklabels(tickers, rotation=45, ha='right')
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
+        ax.grid(True, alpha=0.3, axis='y')
+
+        fig.tight_layout()
+
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.chart_tab_positions)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+
     def take_snapshot_handler(self):
         """Take snapshot of current portfolio for historical tracking"""
-        messagebox.showinfo("Coming Soon", "This feature will be implemented in Phase 5:\n"
-                           "- Calculate current portfolio metrics\n"
-                           "- Append snapshot to portfolio_history.csv\n"
-                           "- Update historical charts")
+        if len(self.portfolio_manager.holdings) == 0:
+            messagebox.showwarning("No Holdings", "No positions to snapshot")
+            return
+
+        # Take snapshot
+        success = self.portfolio_manager.append_snapshot()
+
+        if success:
+            # Show summary
+            summary = self.portfolio_manager.calculate_portfolio_summary()
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            msg = f"Snapshot saved for {today}\n\n"
+            msg += f"Total Value: ${summary['total_value']:,.2f}\n"
+            msg += f"Cost Basis: ${summary['total_cost_basis']:,.2f}\n"
+            msg += f"P&L: ${summary['total_unrealized_pl']:,.2f} ({summary['total_return_pct']:.2f}%)\n"
+            msg += f"Positions: {summary['num_positions']}\n\n"
+            msg += f"Total snapshots: {len(self.portfolio_manager.history)}"
+
+            messagebox.showinfo("Snapshot Saved", msg)
+        else:
+            messagebox.showerror("Error", "Failed to save snapshot")
+
+    def open_import_dialog(self, recommended_df):
+        """
+        Open dialog to import recommended positions with adjustments
+
+        Args:
+            recommended_df: DataFrame with recommended positions from backtest
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Import Recommended Portfolio")
+        dialog.geometry("900x600")
+
+        # Title
+        ttk.Label(dialog, text="Adjust Recommended Positions", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Instructions
+        instructions = ("Edit the 'Actual Shares' and 'Actual Price' columns below.\n"
+                       "Only positions with shares > 0 will be imported.")
+        ttk.Label(dialog, text=instructions, font=('Arial', 10)).pack(pady=5)
+
+        # Create frame for table
+        table_frame = ttk.Frame(dialog)
+        table_frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+        # Create Treeview for editing
+        columns = ('Ticker', 'Sector', 'Rec_Shares', 'Rec_Price', 'Act_Shares', 'Act_Price', 'Entry_Date')
+        tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=15)
+
+        # Column headings
+        tree.heading('Ticker', text='Ticker')
+        tree.heading('Sector', text='Sector')
+        tree.heading('Rec_Shares', text='Rec. Shares')
+        tree.heading('Rec_Price', text='Rec. Price')
+        tree.heading('Act_Shares', text='Actual Shares')
+        tree.heading('Act_Price', text='Actual Price')
+        tree.heading('Entry_Date', text='Entry Date')
+
+        # Column widths
+        tree.column('Ticker', width=60, anchor='center')
+        tree.column('Sector', width=100)
+        tree.column('Rec_Shares', width=80, anchor='e')
+        tree.column('Rec_Price', width=80, anchor='e')
+        tree.column('Act_Shares', width=100, anchor='e')
+        tree.column('Act_Price', width=100, anchor='e')
+        tree.column('Entry_Date', width=100, anchor='center')
+
+        # Populate with recommended positions
+        today = datetime.now().strftime('%Y-%m-%d')
+        for idx, row in recommended_df.iterrows():
+            rec_shares = int(row.get('Shares_to_Buy', 0))
+            rec_price = row.get('Current_Price', 0)
+
+            values = (
+                row['Ticker'],
+                row.get('Sector', ''),
+                rec_shares,
+                f"${rec_price:.2f}",
+                rec_shares,  # Default to recommended
+                f"${rec_price:.2f}",  # Default to recommended
+                today
+            )
+            tree.insert('', tk.END, values=values)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+
+        tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # Edit entry (simple approach: double-click to edit)
+        ttk.Label(dialog, text="Tip: Double-click a row to edit actual shares and price",
+                 font=('Arial', 9), foreground='gray').pack(pady=5)
+
+        # Store editable data
+        editable_data = {}
+        for item_id in tree.get_children():
+            item = tree.item(item_id)
+            ticker = item['values'][0]
+            editable_data[ticker] = {
+                'rec_shares': item['values'][2],
+                'rec_price': float(item['values'][3].replace('$', '')),
+                'act_shares': item['values'][2],
+                'act_price': float(item['values'][5].replace('$', '')),
+                'entry_date': item['values'][6],
+                'sector': item['values'][1]
+            }
+
+        def on_double_click(event):
+            """Handle double-click to edit row"""
+            selected = tree.selection()
+            if not selected:
+                return
+
+            item = tree.item(selected[0])
+            ticker = item['values'][0]
+
+            # Open edit dialog
+            edit_dialog = tk.Toplevel(dialog)
+            edit_dialog.title(f"Edit {ticker}")
+            edit_dialog.geometry("400x250")
+
+            ttk.Label(edit_dialog, text=f"Edit Position: {ticker}", font=('Arial', 12, 'bold')).pack(pady=10)
+
+            # Form
+            form_frame = ttk.Frame(edit_dialog)
+            form_frame.pack(padx=20, pady=10)
+
+            ttk.Label(form_frame, text="Actual Shares:").grid(row=0, column=0, sticky='w', pady=5)
+            shares_var = tk.StringVar(value=str(editable_data[ticker]['act_shares']))
+            shares_entry = ttk.Entry(form_frame, textvariable=shares_var, width=15)
+            shares_entry.grid(row=0, column=1, padx=10, pady=5)
+
+            ttk.Label(form_frame, text="Actual Price ($):").grid(row=1, column=0, sticky='w', pady=5)
+            price_var = tk.StringVar(value=f"{editable_data[ticker]['act_price']:.2f}")
+            price_entry = ttk.Entry(form_frame, textvariable=price_var, width=15)
+            price_entry.grid(row=1, column=1, padx=10, pady=5)
+
+            ttk.Label(form_frame, text="Entry Date:").grid(row=2, column=0, sticky='w', pady=5)
+            date_var = tk.StringVar(value=editable_data[ticker]['entry_date'])
+            date_entry = ttk.Entry(form_frame, textvariable=date_var, width=15)
+            date_entry.grid(row=2, column=1, padx=10, pady=5)
+
+            def save_edit():
+                try:
+                    shares = int(shares_var.get())
+                    price = float(price_var.get())
+                    date = date_var.get()
+
+                    # Update editable data
+                    editable_data[ticker]['act_shares'] = shares
+                    editable_data[ticker]['act_price'] = price
+                    editable_data[ticker]['entry_date'] = date
+
+                    # Update tree display
+                    tree.item(selected[0], values=(
+                        ticker,
+                        editable_data[ticker]['sector'],
+                        editable_data[ticker]['rec_shares'],
+                        f"${editable_data[ticker]['rec_price']:.2f}",
+                        shares,
+                        f"${price:.2f}",
+                        date
+                    ))
+
+                    edit_dialog.destroy()
+                except ValueError:
+                    messagebox.showerror("Invalid Input", "Please enter valid numbers for shares and price")
+
+            ttk.Button(form_frame, text="Save", command=save_edit).grid(row=3, column=0, columnspan=2, pady=10)
+
+        tree.bind('<Double-1>', on_double_click)
+
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        def import_positions():
+            """Import positions with user adjustments"""
+            adjustments = {}
+
+            for ticker, data in editable_data.items():
+                if data['act_shares'] > 0:
+                    adjustments[ticker] = {
+                        'shares': data['act_shares'],
+                        'price': data['act_price'],
+                        'date': data['entry_date']
+                    }
+
+            if not adjustments:
+                messagebox.showwarning("No Positions", "No positions to import (all have 0 shares)")
+                return
+
+            # Import using portfolio manager
+            imported_count = self.portfolio_manager.import_from_recommended(recommended_df, adjustments)
+
+            # Update display
+            self.update_portfolio_display()
+
+            # Close dialog
+            dialog.destroy()
+
+            messagebox.showinfo("Success", f"Imported {imported_count} positions to portfolio")
+
+        ttk.Button(button_frame, text="Import", command=import_positions, width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
+
+    def open_add_position_dialog(self):
+        """Open dialog to manually add a position"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Add Position")
+        dialog.geometry("400x350")
+
+        ttk.Label(dialog, text="Add New Position", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Form
+        form_frame = ttk.Frame(dialog)
+        form_frame.pack(padx=20, pady=10)
+
+        ttk.Label(form_frame, text="Ticker:").grid(row=0, column=0, sticky='w', pady=5)
+        ticker_var = tk.StringVar()
+        ticker_entry = ttk.Entry(form_frame, textvariable=ticker_var, width=20)
+        ticker_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Sector:").grid(row=1, column=0, sticky='w', pady=5)
+        sector_var = tk.StringVar()
+        sector_entry = ttk.Entry(form_frame, textvariable=sector_var, width=20)
+        sector_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Entry Date:").grid(row=2, column=0, sticky='w', pady=5)
+        date_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        date_entry = ttk.Entry(form_frame, textvariable=date_var, width=20)
+        date_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Entry Price ($):").grid(row=3, column=0, sticky='w', pady=5)
+        price_var = tk.StringVar()
+        price_entry = ttk.Entry(form_frame, textvariable=price_var, width=20)
+        price_entry.grid(row=3, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Shares:").grid(row=4, column=0, sticky='w', pady=5)
+        shares_var = tk.StringVar()
+        shares_entry = ttk.Entry(form_frame, textvariable=shares_var, width=20)
+        shares_entry.grid(row=4, column=1, padx=10, pady=5)
+
+        # Status label
+        status_label = ttk.Label(dialog, text="", font=('Arial', 9), foreground='blue')
+        status_label.pack(pady=5)
+
+        def add_position():
+            """Add position with validation"""
+            try:
+                ticker = ticker_var.get().strip().upper()
+                sector = sector_var.get().strip()
+                entry_date = date_var.get().strip()
+                entry_price = float(price_var.get())
+                shares = int(shares_var.get())
+
+                if not ticker:
+                    messagebox.showerror("Invalid Input", "Ticker is required")
+                    return
+
+                if shares <= 0 or entry_price <= 0:
+                    messagebox.showerror("Invalid Input", "Shares and price must be positive")
+                    return
+
+                # Add position
+                status_label.config(text=f"Adding {ticker}...")
+                dialog.update()
+
+                success = self.portfolio_manager.add_position(
+                    ticker=ticker,
+                    entry_date=entry_date,
+                    entry_price=entry_price,
+                    shares=shares,
+                    sector=sector
+                )
+
+                if success:
+                    # Update display
+                    self.update_portfolio_display()
+
+                    # Close dialog
+                    dialog.destroy()
+
+                    messagebox.showinfo("Success", f"Added {ticker} to portfolio")
+                else:
+                    status_label.config(text="Failed to add position", foreground='red')
+
+            except ValueError as e:
+                messagebox.showerror("Invalid Input", "Please enter valid numbers for price and shares")
+
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="Add", command=add_position, width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
 
 
 def main():

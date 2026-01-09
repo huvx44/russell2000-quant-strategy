@@ -26,6 +26,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Portfolio manager data files
+my_portfolio.csv
+portfolio_history.csv
+
 # Data files (optional - uncomment if you don't want to track data)
 # russell2000_tickers.csv
 # russell2000_tickers.txt
