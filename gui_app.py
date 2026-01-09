@@ -34,7 +34,19 @@ class QuantStrategyGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Russell 2000 Quant Strategy")
-        self.root.geometry("1200x800")
+
+        # Set window to max vertical height, fixed width
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        # Reserve space for taskbar/menubar (typically ~100px)
+        window_height = screen_height - 100
+        window_width = min(1400, screen_width - 100)  # Cap at 1400px width
+
+        # Center the window
+        x_position = (screen_width - window_width) // 2
+        y_position = 0
+
+        self.root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
 
         # Configure style
         style = ttk.Style()
@@ -262,44 +274,34 @@ dynamic configuration updates.
                         font=('Arial', 10))
         desc.pack(pady=5)
 
-        # Control Frame
+        # Control Frame - Single row of buttons
         control_frame = ttk.Frame(tab)
         control_frame.pack(fill='x', padx=20, pady=10)
 
-        # Top row buttons
-        button_frame1 = ttk.Frame(control_frame)
-        button_frame1.pack(fill='x', pady=5)
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill='x', pady=5)
 
-        ttk.Button(button_frame1, text="📁 Load Recommended",
-                  command=self.load_recommended_portfolio_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame1, text="💾 Import Portfolio",
-                  command=self.import_portfolio_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame1, text="🔄 Refresh Prices",
-                  command=self.refresh_prices_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame1, text="💾 Save",
-                  command=self.save_portfolio_handler).pack(side='left', padx=5)
-
-        # Bottom row buttons
-        button_frame2 = ttk.Frame(control_frame)
-        button_frame2.pack(fill='x', pady=5)
-
-        ttk.Button(button_frame2, text="➕ Add Position",
-                  command=self.add_position_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame2, text="✏️ Edit Selected",
-                  command=self.edit_position_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame2, text="➖ Remove Selected",
-                  command=self.remove_position_handler).pack(side='left', padx=5)
-
-        # Third row buttons (tagging)
-        button_frame3 = ttk.Frame(control_frame)
-        button_frame3.pack(fill='x', pady=5)
-
-        ttk.Button(button_frame3, text="🏷️ Tag Portfolio",
-                  command=self.tag_portfolio_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame3, text="📋 Manage Tags",
-                  command=self.manage_tags_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame3, text="📸 Take Snapshot",
-                  command=self.take_snapshot_handler).pack(side='left', padx=5)
+        # All buttons in one row with compact text
+        ttk.Button(button_frame, text="Load Recommended", width=16,
+                  command=self.load_recommended_portfolio_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Import", width=10,
+                  command=self.import_portfolio_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Refresh Prices", width=13,
+                  command=self.refresh_prices_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Save", width=8,
+                  command=self.save_portfolio_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Add Position", width=12,
+                  command=self.add_position_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Edit Selected", width=12,
+                  command=self.edit_position_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Remove", width=10,
+                  command=self.remove_position_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Tag Portfolio", width=12,
+                  command=self.tag_portfolio_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Manage Tags", width=12,
+                  command=self.manage_tags_handler).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Take Snapshot", width=13,
+                  command=self.take_snapshot_handler).pack(side='left', padx=3)
 
         # Summary Panel
         summary_frame = ttk.LabelFrame(tab, text="Portfolio Summary", padding=10)
@@ -348,7 +350,7 @@ dynamic configuration updates.
         columns = ('Ticker', 'Sector', 'Entry_Date', 'Entry_Price', 'Shares', 'Cost_Basis',
                   'Current_Price', 'Current_Value', 'PL_Dollar', 'PL_Percent')
 
-        self.portfolio_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
+        self.portfolio_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=8)
 
         # Define column headings
         self.portfolio_tree.heading('Ticker', text='Ticker')
@@ -384,9 +386,9 @@ dynamic configuration updates.
         # Bind double-click to edit position
         self.portfolio_tree.bind('<Double-1>', lambda e: self.edit_position_handler())
 
-        # Charts Panel (placeholder for Phase 6)
+        # Charts Panel
         charts_frame = ttk.LabelFrame(tab, text="Charts", padding=10)
-        charts_frame.pack(fill='both', expand=False, padx=20, pady=10)
+        charts_frame.pack(fill='both', expand=True, padx=20, pady=10)
 
         # Create notebook for chart tabs
         self.portfolio_charts_notebook = ttk.Notebook(charts_frame)
