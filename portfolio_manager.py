@@ -357,6 +357,68 @@ class PortfolioManager:
 
         return True
 
+    def update_position(self, ticker, entry_date=None, entry_price=None, shares=None, sector=None):
+        """
+        Update an existing position
+
+        Args:
+            ticker: Stock symbol to update
+            entry_date: New entry date (optional)
+            entry_price: New entry price (optional)
+            shares: New number of shares (optional)
+            sector: New sector (optional)
+
+        Returns:
+            bool: Success status
+        """
+        if ticker not in self.holdings['Ticker'].values:
+            print(f"Error: {ticker} not found in portfolio")
+            return False
+
+        # Get position index
+        idx = self.holdings[self.holdings['Ticker'] == ticker].index[0]
+
+        # Update fields if provided
+        if entry_date is not None:
+            self.holdings.at[idx, 'Entry_Date'] = entry_date
+
+        if entry_price is not None:
+            self.holdings.at[idx, 'Entry_Price'] = entry_price
+
+        if shares is not None:
+            self.holdings.at[idx, 'Shares_Owned'] = shares
+
+        if sector is not None:
+            self.holdings.at[idx, 'Sector'] = sector
+
+        # Recalculate derived values
+        entry_price_val = self.holdings.at[idx, 'Entry_Price']
+        shares_val = self.holdings.at[idx, 'Shares_Owned']
+        current_price = self.holdings.at[idx, 'Current_Price']
+
+        # Fetch fresh current price
+        print(f"Fetching current price for {ticker}...")
+        new_current_price = self.fetch_current_price(ticker)
+        if new_current_price is not None:
+            current_price = new_current_price
+            self.holdings.at[idx, 'Current_Price'] = current_price
+
+        # Recalculate metrics
+        cost_basis = entry_price_val * shares_val
+        current_value = current_price * shares_val
+        unrealized_pl = current_value - cost_basis
+        unrealized_pl_pct = ((current_price / entry_price_val) - 1) * 100
+
+        self.holdings.at[idx, 'Cost_Basis'] = cost_basis
+        self.holdings.at[idx, 'Current_Value'] = current_value
+        self.holdings.at[idx, 'Unrealized_PL'] = unrealized_pl
+        self.holdings.at[idx, 'Unrealized_PL_Pct'] = unrealized_pl_pct
+        self.holdings.at[idx, 'Last_Updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        print(f"Updated {ticker}: {shares_val} shares @ ${entry_price_val:.2f}, Current: ${current_price:.2f}, P&L: ${unrealized_pl:.2f}")
+
+        return True
+
     def remove_position(self, ticker):
         """
         Remove position from holdings

@@ -285,6 +285,8 @@ dynamic configuration updates.
 
         ttk.Button(button_frame2, text="➕ Add Position",
                   command=self.add_position_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame2, text="✏️ Edit Selected",
+                  command=self.edit_position_handler).pack(side='left', padx=5)
         ttk.Button(button_frame2, text="➖ Remove Selected",
                   command=self.remove_position_handler).pack(side='left', padx=5)
         ttk.Button(button_frame2, text="📸 Take Snapshot",
@@ -369,6 +371,9 @@ dynamic configuration updates.
 
         self.portfolio_tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+
+        # Bind double-click to edit position
+        self.portfolio_tree.bind('<Double-1>', lambda e: self.edit_position_handler())
 
         # Charts Panel (placeholder for Phase 6)
         charts_frame = ttk.LabelFrame(tab, text="Charts", padding=10)
@@ -815,6 +820,31 @@ dynamic configuration updates.
     def add_position_handler(self):
         """Open dialog to manually add a position"""
         self.open_add_position_dialog()
+
+    def edit_position_handler(self):
+        """Open dialog to edit selected position"""
+        selected = self.portfolio_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a position to edit")
+            return
+
+        # Get ticker from selected row
+        item = self.portfolio_tree.item(selected[0])
+        ticker = item['values'][0]
+
+        # Get full position data from portfolio manager
+        position = self.portfolio_manager.holdings[
+            self.portfolio_manager.holdings['Ticker'] == ticker
+        ]
+
+        if len(position) == 0:
+            messagebox.showerror("Error", f"Position {ticker} not found")
+            return
+
+        position = position.iloc[0]
+
+        # Open edit dialog
+        self.open_edit_position_dialog(position)
 
     def remove_position_handler(self):
         """Remove selected position from portfolio"""
@@ -1266,6 +1296,98 @@ dynamic configuration updates.
         button_frame.pack(pady=10)
 
         ttk.Button(button_frame, text="Add", command=add_position, width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
+
+    def open_edit_position_dialog(self, position):
+        """
+        Open dialog to edit an existing position
+
+        Args:
+            position: pd.Series with current position data
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Edit Position - {position['Ticker']}")
+        dialog.geometry("400x350")
+
+        ttk.Label(dialog, text=f"Edit Position: {position['Ticker']}", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Form
+        form_frame = ttk.Frame(dialog)
+        form_frame.pack(padx=20, pady=10)
+
+        # Ticker (read-only, display only)
+        ttk.Label(form_frame, text="Ticker:").grid(row=0, column=0, sticky='w', pady=5)
+        ticker_label = ttk.Label(form_frame, text=position['Ticker'], font=('Arial', 10, 'bold'))
+        ticker_label.grid(row=0, column=1, padx=10, pady=5, sticky='w')
+
+        ttk.Label(form_frame, text="Sector:").grid(row=1, column=0, sticky='w', pady=5)
+        sector_var = tk.StringVar(value=position['Sector'])
+        sector_entry = ttk.Entry(form_frame, textvariable=sector_var, width=20)
+        sector_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Entry Date:").grid(row=2, column=0, sticky='w', pady=5)
+        date_var = tk.StringVar(value=position['Entry_Date'])
+        date_entry = ttk.Entry(form_frame, textvariable=date_var, width=20)
+        date_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Entry Price ($):").grid(row=3, column=0, sticky='w', pady=5)
+        price_var = tk.StringVar(value=f"{position['Entry_Price']:.2f}")
+        price_entry = ttk.Entry(form_frame, textvariable=price_var, width=20)
+        price_entry.grid(row=3, column=1, padx=10, pady=5)
+
+        ttk.Label(form_frame, text="Shares:").grid(row=4, column=0, sticky='w', pady=5)
+        shares_var = tk.StringVar(value=str(int(position['Shares_Owned'])))
+        shares_entry = ttk.Entry(form_frame, textvariable=shares_var, width=20)
+        shares_entry.grid(row=4, column=1, padx=10, pady=5)
+
+        # Status label
+        status_label = ttk.Label(dialog, text="", font=('Arial', 9), foreground='blue')
+        status_label.pack(pady=5)
+
+        def update_position():
+            """Update position with validation"""
+            try:
+                ticker = position['Ticker']
+                sector = sector_var.get().strip()
+                entry_date = date_var.get().strip()
+                entry_price = float(price_var.get())
+                shares = int(shares_var.get())
+
+                if shares <= 0 or entry_price <= 0:
+                    messagebox.showerror("Invalid Input", "Shares and price must be positive")
+                    return
+
+                # Update position in portfolio manager
+                status_label.config(text=f"Updating {ticker}...")
+                dialog.update()
+
+                success = self.portfolio_manager.update_position(
+                    ticker=ticker,
+                    entry_date=entry_date,
+                    entry_price=entry_price,
+                    shares=shares,
+                    sector=sector
+                )
+
+                if success:
+                    # Update display
+                    self.update_portfolio_display()
+
+                    # Close dialog
+                    dialog.destroy()
+
+                    messagebox.showinfo("Success", f"Updated {ticker}")
+                else:
+                    status_label.config(text="Failed to update position", foreground='red')
+
+            except ValueError as e:
+                messagebox.showerror("Invalid Input", "Please enter valid numbers for price and shares")
+
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="Update", command=update_position, width=15).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
 
 
