@@ -289,7 +289,16 @@ dynamic configuration updates.
                   command=self.edit_position_handler).pack(side='left', padx=5)
         ttk.Button(button_frame2, text="➖ Remove Selected",
                   command=self.remove_position_handler).pack(side='left', padx=5)
-        ttk.Button(button_frame2, text="📸 Take Snapshot",
+
+        # Third row buttons (tagging)
+        button_frame3 = ttk.Frame(control_frame)
+        button_frame3.pack(fill='x', pady=5)
+
+        ttk.Button(button_frame3, text="🏷️ Tag Portfolio",
+                  command=self.tag_portfolio_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame3, text="📋 Manage Tags",
+                  command=self.manage_tags_handler).pack(side='left', padx=5)
+        ttk.Button(button_frame3, text="📸 Take Snapshot",
                   command=self.take_snapshot_handler).pack(side='left', padx=5)
 
         # Summary Panel
@@ -1021,6 +1030,19 @@ dynamic configuration updates.
         else:
             messagebox.showerror("Error", "Failed to save snapshot")
 
+    def tag_portfolio_handler(self):
+        """Open dialog to tag current portfolio"""
+        if len(self.portfolio_manager.holdings) == 0:
+            messagebox.showwarning("No Holdings", "No positions to tag")
+            return
+
+        # Open tag creation dialog
+        self.open_tag_dialog()
+
+    def manage_tags_handler(self):
+        """Open dialog to manage tagged portfolios"""
+        self.open_manage_tags_dialog()
+
     def open_import_dialog(self, recommended_df):
         """
         Open dialog to import recommended positions with adjustments
@@ -1389,6 +1411,261 @@ dynamic configuration updates.
 
         ttk.Button(button_frame, text="Update", command=update_position, width=15).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
+
+    def open_tag_dialog(self):
+        """Open dialog to create a tag for current portfolio"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Tag Portfolio")
+        dialog.geometry("500x300")
+
+        ttk.Label(dialog, text="Tag Current Portfolio", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Instructions
+        ttk.Label(dialog, text="Save a labeled snapshot of your current portfolio for rebalancing tracking",
+                 font=('Arial', 10), wraplength=450).pack(pady=5)
+
+        # Form
+        form_frame = ttk.Frame(dialog)
+        form_frame.pack(padx=20, pady=10)
+
+        ttk.Label(form_frame, text="Tag Name:").grid(row=0, column=0, sticky='w', pady=5)
+        ttk.Label(form_frame, text="(e.g., Q1-2026, Rebalance-Jan, Pre-Earnings)",
+                 font=('Arial', 8), foreground='gray').grid(row=0, column=1, sticky='w', padx=(10, 0))
+        tag_name_var = tk.StringVar()
+        tag_name_entry = ttk.Entry(form_frame, textvariable=tag_name_var, width=40)
+        tag_name_entry.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+
+        ttk.Label(form_frame, text="Description:").grid(row=2, column=0, sticky='nw', pady=5)
+        ttk.Label(form_frame, text="(Optional)",
+                 font=('Arial', 8), foreground='gray').grid(row=2, column=1, sticky='w', padx=(10, 0))
+        description_text = tk.Text(form_frame, height=4, width=40)
+        description_text.grid(row=3, column=0, columnspan=2, padx=5, pady=5)
+
+        # Summary
+        summary = self.portfolio_manager.calculate_portfolio_summary()
+        summary_text = f"Positions: {summary['num_positions']}  |  Total Value: ${summary['total_value']:,.2f}"
+        ttk.Label(dialog, text=summary_text, font=('Arial', 9), foreground='blue').pack(pady=5)
+
+        def save_tag():
+            """Save tagged portfolio"""
+            tag_name = tag_name_var.get().strip()
+            description = description_text.get('1.0', tk.END).strip()
+
+            if not tag_name:
+                messagebox.showerror("Invalid Input", "Tag name is required")
+                return
+
+            # Save tagged portfolio
+            tag_id = self.portfolio_manager.save_tagged_portfolio(tag_name, description)
+
+            if tag_id:
+                dialog.destroy()
+                messagebox.showinfo("Success", f"Portfolio tagged as '{tag_name}'\n\nTag ID: {tag_id}")
+            else:
+                messagebox.showerror("Error", "Failed to save tagged portfolio")
+
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        ttk.Button(button_frame, text="Save Tag", command=save_tag, width=15).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=15).pack(side='left', padx=5)
+
+    def open_manage_tags_dialog(self):
+        """Open dialog to view and manage tagged portfolios"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Manage Tagged Portfolios")
+        dialog.geometry("1000x600")
+
+        ttk.Label(dialog, text="Tagged Portfolio History", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Load all tags
+        tags_df = self.portfolio_manager.get_all_tags()
+
+        if len(tags_df) == 0:
+            ttk.Label(dialog, text="No tagged portfolios yet.\nTag your current portfolio to track rebalancing history.",
+                     font=('Arial', 12), foreground='gray').pack(expand=True)
+            ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
+            return
+
+        # Control buttons
+        control_frame = ttk.Frame(dialog)
+        control_frame.pack(fill='x', padx=20, pady=10)
+
+        # Tags table
+        table_frame = ttk.Frame(dialog)
+        table_frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+        # Create Treeview
+        columns = ('Tag_Name', 'Date', 'Positions', 'Total_Value', 'Description')
+        tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=15)
+
+        tree.heading('Tag_Name', text='Tag Name')
+        tree.heading('Date', text='Date')
+        tree.heading('Positions', text='Positions')
+        tree.heading('Total_Value', text='Total Value')
+        tree.heading('Description', text='Description')
+
+        tree.column('Tag_Name', width=150)
+        tree.column('Date', width=100, anchor='center')
+        tree.column('Positions', width=80, anchor='center')
+        tree.column('Total_Value', width=120, anchor='e')
+        tree.column('Description', width=400)
+
+        # Populate tree
+        tag_ids = []
+        for idx, row in tags_df.iterrows():
+            values = (
+                row['Tag_Name'],
+                row['Date'],
+                int(row['Num_Positions']),
+                f"${row['Total_Value']:,.2f}",
+                row['Description']
+            )
+            tree.insert('', tk.END, values=values)
+            tag_ids.append(row['Tag_ID'])
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+
+        tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        def load_tag():
+            """Load selected tagged portfolio"""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("No Selection", "Please select a tagged portfolio to load")
+                return
+
+            idx = tree.index(selected[0])
+            tag_id = tag_ids[idx]
+            tag_name = tags_df.iloc[idx]['Tag_Name']
+
+            confirm = messagebox.askyesno("Confirm Load",
+                                         f"Load '{tag_name}' into current portfolio?\n\n"
+                                         "This will replace your current holdings.")
+            if confirm:
+                tagged_holdings = self.portfolio_manager.load_tagged_portfolio(tag_id)
+                if tagged_holdings is not None:
+                    self.portfolio_manager.holdings = tagged_holdings
+                    self.update_portfolio_display()
+                    dialog.destroy()
+                    messagebox.showinfo("Success", f"Loaded '{tag_name}' into current portfolio")
+
+        def delete_tag():
+            """Delete selected tagged portfolio"""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("No Selection", "Please select a tagged portfolio to delete")
+                return
+
+            idx = tree.index(selected[0])
+            tag_id = tag_ids[idx]
+            tag_name = tags_df.iloc[idx]['Tag_Name']
+
+            confirm = messagebox.askyesno("Confirm Delete",
+                                         f"Delete tagged portfolio '{tag_name}'?\n\n"
+                                         "This cannot be undone.")
+            if confirm:
+                success = self.portfolio_manager.delete_tagged_portfolio(tag_id)
+                if success:
+                    tree.delete(selected[0])
+                    tag_ids.pop(idx)
+                    messagebox.showinfo("Success", f"Deleted '{tag_name}'")
+
+        def compare_tags():
+            """Compare two tagged portfolios"""
+            selected = tree.selection()
+            if len(selected) < 1:
+                messagebox.showwarning("Selection Required", "Please select one or two tagged portfolios to compare")
+                return
+
+            if len(selected) == 1:
+                # Compare with current
+                idx = tree.index(selected[0])
+                tag_id = tag_ids[idx]
+                comparison = self.portfolio_manager.compare_portfolios(tag_id, None)
+            else:
+                # Compare two tags
+                idx1 = tree.index(selected[0])
+                idx2 = tree.index(selected[1])
+                tag_id_1 = tag_ids[idx1]
+                tag_id_2 = tag_ids[idx2]
+                comparison = self.portfolio_manager.compare_portfolios(tag_id_1, tag_id_2)
+
+            if comparison:
+                self.show_comparison_dialog(comparison)
+
+        # Buttons
+        ttk.Button(control_frame, text="Load Selected", command=load_tag).pack(side='left', padx=5)
+        ttk.Button(control_frame, text="Delete Selected", command=delete_tag).pack(side='left', padx=5)
+        ttk.Button(control_frame, text="Compare", command=compare_tags).pack(side='left', padx=5)
+        ttk.Button(control_frame, text="Close", command=dialog.destroy).pack(side='right', padx=5)
+
+    def show_comparison_dialog(self, comparison):
+        """Show portfolio comparison results"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Portfolio Comparison")
+        dialog.geometry("600x500")
+
+        ttk.Label(dialog, text="Portfolio Comparison", font=('Arial', 14, 'bold')).pack(pady=10)
+
+        # Comparison header
+        header_text = f"{comparison['name_1']} vs {comparison['name_2']}"
+        ttk.Label(dialog, text=header_text, font=('Arial', 12)).pack(pady=5)
+
+        # Summary
+        summary_frame = ttk.LabelFrame(dialog, text="Summary", padding=10)
+        summary_frame.pack(fill='x', padx=20, pady=10)
+
+        summary_text = f"Total Changes: {comparison['total_changes']}\n"
+        summary_text += f"Added: {len(comparison['added'])}  |  Removed: {len(comparison['removed'])}  |  Modified: {len(comparison['changed'])}"
+        ttk.Label(summary_frame, text=summary_text, font=('Arial', 10)).pack()
+
+        # Details
+        details_notebook = ttk.Notebook(dialog)
+        details_notebook.pack(fill='both', expand=True, padx=20, pady=10)
+
+        # Added tab
+        added_frame = ttk.Frame(details_notebook)
+        details_notebook.add(added_frame, text=f"Added ({len(comparison['added'])})")
+        added_text = tk.Text(added_frame, height=10, width=60)
+        added_text.pack(fill='both', expand=True, padx=10, pady=10)
+        if comparison['added']:
+            added_text.insert('1.0', '\n'.join(comparison['added']))
+        else:
+            added_text.insert('1.0', "No positions added")
+        added_text.config(state='disabled')
+
+        # Removed tab
+        removed_frame = ttk.Frame(details_notebook)
+        details_notebook.add(removed_frame, text=f"Removed ({len(comparison['removed'])})")
+        removed_text = tk.Text(removed_frame, height=10, width=60)
+        removed_text.pack(fill='both', expand=True, padx=10, pady=10)
+        if comparison['removed']:
+            removed_text.insert('1.0', '\n'.join(comparison['removed']))
+        else:
+            removed_text.insert('1.0', "No positions removed")
+        removed_text.config(state='disabled')
+
+        # Changed tab
+        changed_frame = ttk.Frame(details_notebook)
+        details_notebook.add(changed_frame, text=f"Modified ({len(comparison['changed'])})")
+        changed_text = tk.Text(changed_frame, height=10, width=60, font=('Courier', 9))
+        changed_text.pack(fill='both', expand=True, padx=10, pady=10)
+        if comparison['changed']:
+            for change in comparison['changed']:
+                line = f"{change['Ticker']}: {change['Shares_Before']} → {change['Shares_After']} shares"
+                if change['Price_Before'] != change['Price_After']:
+                    line += f", ${change['Price_Before']:.2f} → ${change['Price_After']:.2f}"
+                changed_text.insert(tk.END, line + '\n')
+        else:
+            changed_text.insert('1.0', "No positions modified")
+        changed_text.config(state='disabled')
+
+        ttk.Button(dialog, text="Close", command=dialog.destroy).pack(pady=10)
 
 
 def main():

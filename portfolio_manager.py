@@ -40,6 +40,15 @@ class PortfolioManager:
         self.history = pd.DataFrame()
         self.last_refresh = None
 
+        # Tagged portfolios directory
+        self.tags_dir = 'tagged_portfolios'
+        self.tags_index_file = 'portfolio_tags.csv'
+
+        # Create tags directory if it doesn't exist
+        if not os.path.exists(self.tags_dir):
+            os.makedirs(self.tags_dir)
+            print(f"Created tagged portfolios directory: {self.tags_dir}/")
+
         # Define column schemas
         self.holdings_columns = [
             'Ticker', 'Sector', 'Entry_Date', 'Entry_Price', 'Shares_Owned',
@@ -51,6 +60,11 @@ class PortfolioManager:
         self.history_columns = [
             'Date', 'Total_Value', 'Total_Cost_Basis', 'Total_Unrealized_PL',
             'Total_Return_Pct', 'Num_Positions'
+        ]
+
+        self.tags_columns = [
+            'Tag_ID', 'Tag_Name', 'Date', 'Timestamp', 'Num_Positions',
+            'Total_Value', 'Total_Cost_Basis', 'Description', 'Filename'
         ]
 
         # Auto-load on initialization
@@ -509,6 +523,224 @@ class PortfolioManager:
 
         print(f"\nImported {imported_count} positions from recommended portfolio")
         return imported_count
+
+    def save_tagged_portfolio(self, tag_name, description=''):
+        """
+        Save current portfolio with a tag for rebalancing tracking
+
+        Args:
+            tag_name: Name/label for this portfolio version (e.g., "Q1-2026", "Rebalance-Jan")
+            description: Optional description (e.g., "Quarterly rebalance based on backtest")
+
+        Returns:
+            str: Tag ID, or None if failed
+        """
+        if len(self.holdings) == 0:
+            print("Error: No holdings to tag")
+            return None
+
+        # Generate tag ID
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        tag_id = f"tag_{timestamp}"
+
+        # Create filename
+        filename = f"{tag_id}_{tag_name.replace(' ', '_')}.csv"
+        filepath = os.path.join(self.tags_dir, filename)
+
+        # Save portfolio snapshot
+        try:
+            self.holdings.to_csv(filepath, index=False)
+            print(f"Saved tagged portfolio: {filepath}")
+        except Exception as e:
+            print(f"Error saving tagged portfolio: {e}")
+            return None
+
+        # Update tags index
+        summary = self.calculate_portfolio_summary()
+        tag_entry = {
+            'Tag_ID': tag_id,
+            'Tag_Name': tag_name,
+            'Date': datetime.now().strftime('%Y-%m-%d'),
+            'Timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'Num_Positions': summary['num_positions'],
+            'Total_Value': summary['total_value'],
+            'Total_Cost_Basis': summary['total_cost_basis'],
+            'Description': description,
+            'Filename': filename
+        }
+
+        # Load existing tags or create new
+        if os.path.exists(self.tags_index_file):
+            tags_df = pd.read_csv(self.tags_index_file)
+            tags_df = pd.concat([tags_df, pd.DataFrame([tag_entry])], ignore_index=True)
+        else:
+            tags_df = pd.DataFrame([tag_entry])
+
+        tags_df.to_csv(self.tags_index_file, index=False)
+        print(f"Tagged portfolio saved: '{tag_name}' ({tag_id})")
+
+        return tag_id
+
+    def load_tagged_portfolio(self, tag_id):
+        """
+        Load a tagged portfolio by ID
+
+        Args:
+            tag_id: Tag ID to load
+
+        Returns:
+            pd.DataFrame: Holdings from tagged portfolio, or None if not found
+        """
+        # Load tags index
+        if not os.path.exists(self.tags_index_file):
+            print("No tagged portfolios found")
+            return None
+
+        tags_df = pd.read_csv(self.tags_index_file)
+        tag_entry = tags_df[tags_df['Tag_ID'] == tag_id]
+
+        if len(tag_entry) == 0:
+            print(f"Tag ID {tag_id} not found")
+            return None
+
+        filename = tag_entry.iloc[0]['Filename']
+        filepath = os.path.join(self.tags_dir, filename)
+
+        if not os.path.exists(filepath):
+            print(f"Tagged portfolio file not found: {filepath}")
+            return None
+
+        try:
+            tagged_holdings = pd.read_csv(filepath)
+            print(f"Loaded tagged portfolio: {tag_entry.iloc[0]['Tag_Name']}")
+            return tagged_holdings
+        except Exception as e:
+            print(f"Error loading tagged portfolio: {e}")
+            return None
+
+    def get_all_tags(self):
+        """
+        Get list of all tagged portfolios
+
+        Returns:
+            pd.DataFrame: Tags index, or empty DataFrame if none exist
+        """
+        if not os.path.exists(self.tags_index_file):
+            return pd.DataFrame(columns=self.tags_columns)
+
+        try:
+            tags_df = pd.read_csv(self.tags_index_file)
+            # Sort by date descending (most recent first)
+            tags_df = tags_df.sort_values('Timestamp', ascending=False).reset_index(drop=True)
+            return tags_df
+        except Exception as e:
+            print(f"Error loading tags: {e}")
+            return pd.DataFrame(columns=self.tags_columns)
+
+    def delete_tagged_portfolio(self, tag_id):
+        """
+        Delete a tagged portfolio
+
+        Args:
+            tag_id: Tag ID to delete
+
+        Returns:
+            bool: Success status
+        """
+        if not os.path.exists(self.tags_index_file):
+            print("No tagged portfolios found")
+            return False
+
+        tags_df = pd.read_csv(self.tags_index_file)
+        tag_entry = tags_df[tags_df['Tag_ID'] == tag_id]
+
+        if len(tag_entry) == 0:
+            print(f"Tag ID {tag_id} not found")
+            return False
+
+        # Delete file
+        filename = tag_entry.iloc[0]['Filename']
+        filepath = os.path.join(self.tags_dir, filename)
+
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                print(f"Deleted file: {filepath}")
+        except Exception as e:
+            print(f"Error deleting file: {e}")
+            return False
+
+        # Remove from index
+        tags_df = tags_df[tags_df['Tag_ID'] != tag_id]
+        tags_df.to_csv(self.tags_index_file, index=False)
+        print(f"Deleted tagged portfolio: {tag_id}")
+
+        return True
+
+    def compare_portfolios(self, tag_id_1, tag_id_2=None):
+        """
+        Compare two portfolios (or current with tagged)
+
+        Args:
+            tag_id_1: First tag ID (or None for current portfolio)
+            tag_id_2: Second tag ID (or None for current portfolio)
+
+        Returns:
+            dict: Comparison results with added, removed, and changed positions
+        """
+        # Load portfolios
+        if tag_id_1 is None:
+            portfolio_1 = self.holdings.copy()
+            name_1 = "Current Portfolio"
+        else:
+            portfolio_1 = self.load_tagged_portfolio(tag_id_1)
+            if portfolio_1 is None:
+                return None
+            tags_df = pd.read_csv(self.tags_index_file)
+            name_1 = tags_df[tags_df['Tag_ID'] == tag_id_1].iloc[0]['Tag_Name']
+
+        if tag_id_2 is None:
+            portfolio_2 = self.holdings.copy()
+            name_2 = "Current Portfolio"
+        else:
+            portfolio_2 = self.load_tagged_portfolio(tag_id_2)
+            if portfolio_2 is None:
+                return None
+            tags_df = pd.read_csv(self.tags_index_file)
+            name_2 = tags_df[tags_df['Tag_ID'] == tag_id_2].iloc[0]['Tag_Name']
+
+        # Get ticker sets
+        tickers_1 = set(portfolio_1['Ticker'].values)
+        tickers_2 = set(portfolio_2['Ticker'].values)
+
+        # Find differences
+        added = tickers_2 - tickers_1
+        removed = tickers_1 - tickers_2
+        common = tickers_1 & tickers_2
+
+        # Check for changes in common positions
+        changed = []
+        for ticker in common:
+            pos_1 = portfolio_1[portfolio_1['Ticker'] == ticker].iloc[0]
+            pos_2 = portfolio_2[portfolio_2['Ticker'] == ticker].iloc[0]
+
+            if pos_1['Shares_Owned'] != pos_2['Shares_Owned'] or pos_1['Entry_Price'] != pos_2['Entry_Price']:
+                changed.append({
+                    'Ticker': ticker,
+                    'Shares_Before': pos_1['Shares_Owned'],
+                    'Shares_After': pos_2['Shares_Owned'],
+                    'Price_Before': pos_1['Entry_Price'],
+                    'Price_After': pos_2['Entry_Price']
+                })
+
+        return {
+            'name_1': name_1,
+            'name_2': name_2,
+            'added': list(added),
+            'removed': list(removed),
+            'changed': changed,
+            'total_changes': len(added) + len(removed) + len(changed)
+        }
 
 
 if __name__ == "__main__":
