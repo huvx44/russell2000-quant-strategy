@@ -492,6 +492,14 @@ class PortfolioManager:
         Returns:
             int: Number of positions imported
         """
+        # Clear existing holdings before importing
+        self.holdings = pd.DataFrame(columns=[
+            'Ticker', 'Sector', 'Entry_Date', 'Entry_Price', 'Shares_Owned',
+            'Cost_Basis', 'Current_Price', 'Current_Value', 'Unrealized_PL',
+            'Unrealized_PL_Pct', 'Composite_Score', 'Quality_Score',
+            'Growth_Score', 'Value_Score', 'Momentum_Score', 'Last_Updated'
+        ])
+
         imported_count = 0
 
         for idx, row in recommended_df.iterrows():
