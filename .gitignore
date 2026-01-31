@@ -35,6 +35,10 @@ tagged_portfolios/
 # Strategy configuration presets
 config_presets/
 
+# Webapp data (runtime-generated)
+webapp/data/
+*.db
+
 # Data files (optional - uncomment if you don't want to track data)
 # russell2000_tickers.csv
 # russell2000_tickers.txt
