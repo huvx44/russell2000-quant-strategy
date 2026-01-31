@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}Configuration - Quant Strategy{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <h3 class="mb-4"><i class="bi bi-gear"></i> Strategy Configuration</h3>
+
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0">Factor Weights</h5></div>
+            <div class="card-body">
+                <p class="text-muted small">Each factor's importance in the composite score. Should sum to 100%.</p>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Quality (%)</label>
+                        <input type="number" class="form-control config-input" id="qualityWeight"
+                               value="{{ config.quality_weight }}" min="0" max="100">
+                        <small class="text-muted">ROE, ROA, margins, debt</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Growth (%)</label>
+                        <input type="number" class="form-control config-input" id="growthWeight"
+                               value="{{ config.growth_weight }}" min="0" max="100">
+                        <small class="text-muted">Revenue, earnings growth</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Value (%)</label>
+                        <input type="number" class="form-control config-input" id="valueWeight"
+                               value="{{ config.value_weight }}" min="0" max="100">
+                        <small class="text-muted">P/E, PEG, P/S ratios</small>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Momentum (%)</label>
+                        <input type="number" class="form-control config-input" id="momentumWeight"
+                               value="{{ config.momentum_weight }}" min="0" max="100">
+                        <small class="text-muted">12-1mo return, volatility</small>
+                    </div>
+                </div>
+                <div id="weightSum" class="mt-2 small"></div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0">Portfolio Constraints</h5></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Portfolio Size (Top N)</label>
+                        <input type="number" class="form-control config-input" id="topN"
+                               value="{{ config.top_n }}" min="5" max="100">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Max Sector Weight (%)</label>
+                        <input type="number" class="form-control config-input" id="maxSectorWeight"
+                               value="{{ config.max_sector_weight }}" min="10" max="100">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Rebalance Frequency</label>
+                        <select class="form-select config-input" id="rebalFreq">
+                            <option value="Q" {% if config.rebalance_freq == 'Q' %}selected{% endif %}>Quarterly</option>
+                            <option value="M" {% if config.rebalance_freq == 'M' %}selected{% endif %}>Monthly</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Min Market Cap ($M)</label>
+                        <input type="number" class="form-control config-input" id="minMcap"
+                               value="{{ config.min_market_cap }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Max Market Cap ($B)</label>
+                        <input type="number" class="form-control config-input" id="maxMcap"
+                               value="{{ config.max_market_cap }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Min Avg Volume</label>
+                        <input type="number" class="form-control config-input" id="minVolume"
+                               value="{{ config.min_avg_volume }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Initial Balance ($)</label>
+                        <input type="number" class="form-control config-input" id="initialBalance"
+                               value="{{ config.initial_balance }}">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0">Save / Load Presets</h5></div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-6">
+                        <label class="form-label">Preset Name</label>
+                        <input type="text" class="form-control" id="presetName" placeholder="e.g. aggressive-growth">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-success w-100" onclick="savePreset()">
+                            <i class="bi bi-save"></i> Save
+                        </button>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-outline-light w-100" onclick="resetDefaults()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Reset
+                        </button>
+                    </div>
+                </div>
+                <div id="presetStatus" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Saved Presets -->
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0">Saved Presets</h5></div>
+            <div class="card-body" id="presetList">
+                {% if presets %}
+                <div class="list-group">
+                    {% for preset in presets %}
+                    <div class="list-group-item list-group-item-action bg-dark border-secondary d-flex justify-content-between align-items-center">
+                        <a href="#" class="text-decoration-none flex-grow-1" onclick="loadPreset('{{ preset }}'); return false;">
+                            <i class="bi bi-file-earmark-text"></i> {{ preset }}
+                        </a>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deletePreset('{{ preset }}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No presets saved yet.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Load from Results -->
+        <div class="card">
+            <div class="card-header"><h5 class="mb-0">Load from Backtest</h5></div>
+            <div class="card-body">
+                {% if results_configs %}
+                <div class="list-group" style="max-height: 300px; overflow-y: auto;">
+                    {% for folder in results_configs %}
+                    <a href="#" class="list-group-item list-group-item-action bg-dark border-secondary small"
+                       onclick="loadFromResults('{{ folder }}'); return false;">
+                        <i class="bi bi-folder"></i> {{ folder }}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No backtest results with saved configs.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const defaults = {{ config | tojson }};
+
+    // Weight sum validation
+    document.querySelectorAll('#qualityWeight, #growthWeight, #valueWeight, #momentumWeight').forEach(el => {
+        el.addEventListener('input', updateWeightSum);
+    });
+    updateWeightSum();
+
+    function updateWeightSum() {
+        const sum = ['qualityWeight', 'growthWeight', 'valueWeight', 'momentumWeight']
+            .reduce((s, id) => s + (parseInt(document.getElementById(id).value) || 0), 0);
+        const el = document.getElementById('weightSum');
+        if (sum === 100) {
+            el.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Weights sum to 100%</span>';
+        } else {
+            el.innerHTML = `<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Weights sum to ${sum}% (should be 100%)</span>`;
+        }
+    }
+
+    function getConfig() {
+        return {
+            quality_weight: parseInt(document.getElementById('qualityWeight').value) || 0,
+            growth_weight: parseInt(document.getElementById('growthWeight').value) || 0,
+            value_weight: parseInt(document.getElementById('valueWeight').value) || 0,
+            momentum_weight: parseInt(document.getElementById('momentumWeight').value) || 0,
+            top_n: parseInt(document.getElementById('topN').value) || 20,
+            max_sector_weight: parseInt(document.getElementById('maxSectorWeight').value) || 30,
+            min_market_cap: parseInt(document.getElementById('minMcap').value) || 300,
+            max_market_cap: parseInt(document.getElementById('maxMcap').value) || 10,
+            min_avg_volume: parseInt(document.getElementById('minVolume').value) || 100000,
+            rebalance_freq: document.getElementById('rebalFreq').value,
+            initial_balance: parseInt(document.getElementById('initialBalance').value) || 100000,
+        };
+    }
+
+    function setConfig(cfg) {
+        document.getElementById('qualityWeight').value = cfg.quality_weight ?? defaults.quality_weight;
+        document.getElementById('growthWeight').value = cfg.growth_weight ?? defaults.growth_weight;
+        document.getElementById('valueWeight').value = cfg.value_weight ?? defaults.value_weight;
+        document.getElementById('momentumWeight').value = cfg.momentum_weight ?? defaults.momentum_weight;
+        document.getElementById('topN').value = cfg.top_n ?? defaults.top_n;
+        document.getElementById('maxSectorWeight').value = cfg.max_sector_weight ?? defaults.max_sector_weight;
+        document.getElementById('minMcap').value = cfg.min_market_cap ?? defaults.min_market_cap;
+        document.getElementById('maxMcap').value = cfg.max_market_cap ?? defaults.max_market_cap;
+        document.getElementById('minVolume').value = cfg.min_avg_volume ?? defaults.min_avg_volume;
+        document.getElementById('rebalFreq').value = cfg.rebalance_freq ?? defaults.rebalance_freq;
+        document.getElementById('initialBalance').value = cfg.initial_balance ?? defaults.initial_balance;
+        updateWeightSum();
+    }
+
+    function savePreset() {
+        const name = document.getElementById('presetName').value.trim();
+        if (!name) { alert('Enter a preset name'); return; }
+
+        fetch('/config/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, config: getConfig() })
+        })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('presetStatus').innerHTML =
+                data.success ? `<span class="text-success">${data.message}</span>`
+                             : `<span class="text-danger">${data.error}</span>`;
+            if (data.success) setTimeout(() => location.reload(), 500);
+        });
+    }
+
+    function loadPreset(name) {
+        fetch(`/config/load/${name}`).then(r => r.json()).then(cfg => {
+            setConfig(cfg);
+            document.getElementById('presetStatus').innerHTML =
+                `<span class="text-success">Loaded preset: ${name}</span>`;
+        });
+    }
+
+    function loadFromResults(folder) {
+        fetch(`/config/load-from-results/${folder}`).then(r => r.json()).then(cfg => {
+            if (cfg.error) { alert(cfg.error); return; }
+            setConfig(cfg);
+            document.getElementById('presetStatus').innerHTML =
+                `<span class="text-success">Loaded config from: ${folder}</span>`;
+        });
+    }
+
+    function deletePreset(name) {
+        if (!confirm(`Delete preset "${name}"?`)) return;
+        fetch(`/config/delete/${name}`, { method: 'POST' })
+            .then(r => r.json())
+            .then(() => location.reload());
+    }
+
+    function resetDefaults() {
+        setConfig(defaults);
+        document.getElementById('presetStatus').innerHTML =
+            '<span class="text-info">Reset to defaults</span>';
+    }
+</script>
+{% endblock %}

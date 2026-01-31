@@ -1,0 +1,515 @@
+{% extends "base.html" %}
+{% block title %}Portfolio - Quant Strategy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3><i class="bi bi-briefcase"></i> Portfolio Manager</h3>
+    <div>
+        <button class="btn btn-outline-info btn-sm" onclick="refreshPrices()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh Prices
+        </button>
+        <button class="btn btn-outline-success btn-sm" onclick="savePortfolio()">
+            <i class="bi bi-save"></i> Save
+        </button>
+        <button class="btn btn-outline-primary btn-sm" onclick="importRecommended()">
+            <i class="bi bi-download"></i> Import from Backtest
+        </button>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="summary-card {% if summary.total_unrealized_pl >= 0 %}positive{% else %}negative{% endif %}">
+            <div class="label">Total Value</div>
+            <div class="value">${{ '{:,.2f}'.format(summary.total_value) }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="summary-card neutral">
+            <div class="label">Cost Basis</div>
+            <div class="value">${{ '{:,.2f}'.format(summary.total_cost_basis) }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="summary-card {% if summary.total_unrealized_pl >= 0 %}positive{% else %}negative{% endif %}">
+            <div class="label">Unrealized P&L</div>
+            <div class="value {% if summary.total_unrealized_pl >= 0 %}text-profit{% else %}text-loss{% endif %}">
+                ${{ '{:,.2f}'.format(summary.total_unrealized_pl) }}
+                ({{ '{:.2f}'.format(summary.total_return_pct) }}%)
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="summary-card info">
+            <div class="label">Positions</div>
+            <div class="value">{{ summary.num_positions }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Holdings Table -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Holdings</h5>
+        <button class="btn btn-sm btn-success" onclick="showAddModal()">
+            <i class="bi bi-plus-lg"></i> Add Position
+        </button>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0" id="holdingsTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortHoldings(this, 'Ticker')">Ticker</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Sector')">Sector</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Entry_Date')">Entry Date</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Entry_Price')">Entry Price</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Shares_Owned')">Shares</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Cost_Basis')">Cost Basis</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Current_Price')">Current</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Current_Value')">Value</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Unrealized_PL')">P&L $</th>
+                        <th class="sortable" onclick="sortHoldings(this, 'Unrealized_PL_Pct')">P&L %</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="holdingsBody">
+                    {% for h in holdings %}
+                    <tr>
+                        <td><strong>{{ h.Ticker }}</strong></td>
+                        <td>{{ h.Sector }}</td>
+                        <td>{{ h.Entry_Date }}</td>
+                        <td>${{ '{:.2f}'.format(h.Entry_Price) }}</td>
+                        <td>{{ h.Shares_Owned | int }}</td>
+                        <td>${{ '{:,.2f}'.format(h.Cost_Basis) }}</td>
+                        <td>${{ '{:.2f}'.format(h.Current_Price) }}</td>
+                        <td>${{ '{:,.2f}'.format(h.Current_Value) }}</td>
+                        <td class="{% if h.Unrealized_PL >= 0 %}text-profit{% else %}text-loss{% endif %}">
+                            ${{ '{:,.2f}'.format(h.Unrealized_PL) }}
+                        </td>
+                        <td class="{% if h.Unrealized_PL_Pct >= 0 %}text-profit{% else %}text-loss{% endif %}">
+                            {{ '{:.2f}'.format(h.Unrealized_PL_Pct) }}%
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-light py-0 px-1"
+                                    onclick="showEditModal('{{ h.Ticker }}', '{{ h.Sector }}', '{{ h.Entry_Date }}', {{ h.Entry_Price }}, {{ h.Shares_Owned | int }})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1"
+                                    onclick="removePosition('{{ h.Ticker }}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not holdings %}
+                    <tr><td colspan="11" class="text-center text-muted py-4">No positions. Add one or import from backtest.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Sector Allocation</h6></div>
+            <div class="card-body p-1 text-center">
+                <img src="{{ url_for('portfolio.chart_sector') }}?t={{ range(99999) | random }}" class="chart-img" alt="Sector" style="max-height:250px;">
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">P&L by Position</h6></div>
+            <div class="card-body p-1 text-center">
+                <img src="{{ url_for('portfolio.chart_pnl') }}?t={{ range(99999) | random }}" class="chart-img" alt="P&L" style="max-height:250px;">
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h6 class="mb-0">Performance History</h6></div>
+            <div class="card-body p-1 text-center">
+                <img src="{{ url_for('portfolio.chart_performance') }}?t={{ range(99999) | random }}" class="chart-img" alt="Performance" style="max-height:250px;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tags & Snapshots -->
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <h5 class="mb-0">Snapshots & Tags</h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-info" onclick="takeSnapshot()">
+                        <i class="bi bi-camera"></i> Snapshot
+                    </button>
+                    <button class="btn btn-sm btn-outline-success" onclick="showTagModal()">
+                        <i class="bi bi-tag"></i> Tag
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="tagsList">
+                    {% if tags %}
+                    <table class="table table-dark table-sm">
+                        <thead>
+                            <tr><th>Name</th><th>Date</th><th>Positions</th><th>Value</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            {% for tag in tags %}
+                            <tr>
+                                <td>{{ tag.Tag_Name }}</td>
+                                <td>{{ tag.Date }}</td>
+                                <td>{{ tag.Num_Positions }}</td>
+                                <td>${{ '{:,.0f}'.format(tag.Total_Value) }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-light py-0" onclick="loadTag('{{ tag.Tag_ID }}')">Load</button>
+                                    <button class="btn btn-sm btn-outline-danger py-0" onclick="deleteTag('{{ tag.Tag_ID }}')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="text-muted mb-0">No tags yet. Tag your portfolio to track versions.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h5 class="mb-0">Compare Portfolios</h5></div>
+            <div class="card-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-5">
+                        <select class="form-select form-select-sm" id="compareTag1">
+                            <option value="">Current Portfolio</option>
+                            {% for tag in tags %}
+                            <option value="{{ tag.Tag_ID }}">{{ tag.Tag_Name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-2 text-center pt-1">vs</div>
+                    <div class="col-5">
+                        <select class="form-select form-select-sm" id="compareTag2">
+                            <option value="">Current Portfolio</option>
+                            {% for tag in tags %}
+                            <option value="{{ tag.Tag_ID }}">{{ tag.Tag_Name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="comparePortfolios()">Compare</button>
+                <div id="compareResult" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Position Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Add Position</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Ticker</label>
+                    <input type="text" class="form-control" id="addTicker" placeholder="e.g. AAPL">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Sector</label>
+                    <input type="text" class="form-control" id="addSector">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Entry Date</label>
+                    <input type="date" class="form-control" id="addDate">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Entry Price ($)</label>
+                    <input type="number" class="form-control" id="addPrice" step="0.01" min="0.01">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Shares</label>
+                    <input type="number" class="form-control" id="addShares" min="1">
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-success" onclick="addPosition()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Position Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Edit Position: <span id="editTickerTitle"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editTicker">
+                <div class="mb-3">
+                    <label class="form-label">Sector</label>
+                    <input type="text" class="form-control" id="editSector">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Entry Date</label>
+                    <input type="date" class="form-control" id="editDate">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Entry Price ($)</label>
+                    <input type="number" class="form-control" id="editPrice" step="0.01">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Shares</label>
+                    <input type="number" class="form-control" id="editShares" min="1">
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" onclick="editPosition()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tag Modal -->
+<div class="modal fade" id="tagModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Tag Portfolio</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Tag Name</label>
+                    <input type="text" class="form-control" id="tagName" placeholder="e.g. Q1-2026 Rebalance">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description (optional)</label>
+                    <textarea class="form-control" id="tagDesc" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-success" onclick="createTag()">Create Tag</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="statusToast" class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999;">
+    <div class="toast align-items-center border-0" role="alert" id="toast">
+        <div class="d-flex">
+            <div class="toast-body" id="toastBody"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Set default date
+    document.getElementById('addDate').valueAsDate = new Date();
+
+    function showToast(msg, type) {
+        const toast = document.getElementById('toast');
+        const body = document.getElementById('toastBody');
+        body.textContent = msg;
+        toast.className = `toast align-items-center border-0 text-bg-${type || 'info'}`;
+        new bootstrap.Toast(toast, { delay: 3000 }).show();
+    }
+
+    function apiCall(url, method, body) {
+        const opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json' } };
+        if (body) opts.body = JSON.stringify(body);
+        return fetch(url, opts).then(r => r.json());
+    }
+
+    function refreshPrices() {
+        showToast('Refreshing prices...', 'info');
+        apiCall('/portfolio/refresh', 'POST').then(data => {
+            if (data.success !== undefined) {
+                showToast(`Refreshed: ${data.success} ok, ${data.failed} failed`, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(data.error, 'danger');
+            }
+        });
+    }
+
+    function savePortfolio() {
+        apiCall('/portfolio/save', 'POST').then(data => {
+            showToast(data.success ? 'Portfolio saved' : data.error, data.success ? 'success' : 'danger');
+        });
+    }
+
+    function showAddModal() {
+        new bootstrap.Modal(document.getElementById('addModal')).show();
+    }
+
+    function addPosition() {
+        apiCall('/portfolio/add', 'POST', {
+            ticker: document.getElementById('addTicker').value,
+            sector: document.getElementById('addSector').value,
+            entry_date: document.getElementById('addDate').value,
+            entry_price: document.getElementById('addPrice').value,
+            shares: document.getElementById('addShares').value,
+        }).then(data => {
+            if (data.success) { location.reload(); }
+            else { showToast(data.error, 'danger'); }
+        });
+    }
+
+    function showEditModal(ticker, sector, date, price, shares) {
+        document.getElementById('editTicker').value = ticker;
+        document.getElementById('editTickerTitle').textContent = ticker;
+        document.getElementById('editSector').value = sector;
+        document.getElementById('editDate').value = date;
+        document.getElementById('editPrice').value = price;
+        document.getElementById('editShares').value = shares;
+        new bootstrap.Modal(document.getElementById('editModal')).show();
+    }
+
+    function editPosition() {
+        const ticker = document.getElementById('editTicker').value;
+        apiCall(`/portfolio/edit/${ticker}`, 'POST', {
+            sector: document.getElementById('editSector').value,
+            entry_date: document.getElementById('editDate').value,
+            entry_price: document.getElementById('editPrice').value,
+            shares: document.getElementById('editShares').value,
+        }).then(data => {
+            if (data.success) { location.reload(); }
+            else { showToast(data.error, 'danger'); }
+        });
+    }
+
+    function removePosition(ticker) {
+        if (!confirm(`Remove ${ticker} from portfolio?`)) return;
+        apiCall(`/portfolio/remove/${ticker}`, 'POST').then(data => {
+            if (data.success) { location.reload(); }
+            else { showToast(data.error, 'danger'); }
+        });
+    }
+
+    function importRecommended() {
+        apiCall('/portfolio/import-recommended', 'POST').then(data => {
+            if (data.error) { showToast(data.error, 'danger'); return; }
+            if (confirm(`Import ${data.positions.length} positions from ${data.folder}?\nThis will replace current holdings.`)) {
+                const adjustments = {};
+                data.positions.forEach(p => {
+                    adjustments[p.Ticker] = {
+                        shares: p.Shares_to_Buy || 0,
+                        price: p.Current_Price || 0,
+                        date: new Date().toISOString().split('T')[0]
+                    };
+                });
+                apiCall('/portfolio/import-execute', 'POST', { adjustments }).then(r => {
+                    if (r.success) {
+                        showToast(`Imported ${r.imported} positions`, 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else { showToast(r.error, 'danger'); }
+                });
+            }
+        });
+    }
+
+    function takeSnapshot() {
+        apiCall('/portfolio/snapshot', 'POST').then(data => {
+            showToast(data.success ? 'Snapshot saved' : data.error, data.success ? 'success' : 'danger');
+        });
+    }
+
+    function showTagModal() {
+        new bootstrap.Modal(document.getElementById('tagModal')).show();
+    }
+
+    function createTag() {
+        apiCall('/portfolio/tags/create', 'POST', {
+            name: document.getElementById('tagName').value,
+            description: document.getElementById('tagDesc').value,
+        }).then(data => {
+            if (data.success) {
+                showToast('Tag created', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else { showToast(data.error, 'danger'); }
+        });
+    }
+
+    function loadTag(tagId) {
+        if (!confirm('Load this tagged portfolio? Current holdings will be replaced.')) return;
+        apiCall(`/portfolio/tags/${tagId}/load`, 'POST').then(data => {
+            if (data.success) { location.reload(); }
+            else { showToast(data.error, 'danger'); }
+        });
+    }
+
+    function deleteTag(tagId) {
+        if (!confirm('Delete this tag?')) return;
+        apiCall(`/portfolio/tags/${tagId}/delete`, 'POST').then(data => {
+            if (data.success) { location.reload(); }
+            else { showToast(data.error, 'danger'); }
+        });
+    }
+
+    function comparePortfolios() {
+        const tag1 = document.getElementById('compareTag1').value || null;
+        const tag2 = document.getElementById('compareTag2').value || null;
+        apiCall('/portfolio/tags/compare', 'POST', { tag1, tag2 }).then(data => {
+            if (data.error) { showToast(data.error, 'danger'); return; }
+            let html = `<h6>${data.name_1} vs ${data.name_2}</h6>`;
+            html += `<p class="small">${data.total_changes} total changes</p>`;
+            if (data.added.length) html += `<div class="text-profit mb-1"><strong>Added:</strong> ${data.added.join(', ')}</div>`;
+            if (data.removed.length) html += `<div class="text-loss mb-1"><strong>Removed:</strong> ${data.removed.join(', ')}</div>`;
+            if (data.changed.length) {
+                html += '<div class="mb-1"><strong>Changed:</strong></div>';
+                data.changed.forEach(c => {
+                    html += `<div class="small">${c.Ticker}: ${c.Shares_Before} -> ${c.Shares_After} shares</div>`;
+                });
+            }
+            if (data.total_changes === 0) html += '<div class="text-muted">No differences found.</div>';
+            document.getElementById('compareResult').innerHTML = html;
+        });
+    }
+
+    function sortHoldings(th, col) {
+        // Simple client-side sort
+        const table = document.getElementById('holdingsTable');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const idx = Array.from(th.parentNode.children).indexOf(th);
+        const asc = !th.classList.contains('asc');
+
+        th.parentNode.querySelectorAll('th').forEach(t => t.classList.remove('asc', 'desc'));
+        th.classList.add(asc ? 'asc' : 'desc');
+
+        rows.sort((a, b) => {
+            const va = a.children[idx]?.textContent?.trim() || '';
+            const vb = b.children[idx]?.textContent?.trim() || '';
+            const na = parseFloat(va.replace(/[$,%]/g, ''));
+            const nb = parseFloat(vb.replace(/[$,%]/g, ''));
+            if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+        rows.forEach(r => tbody.appendChild(r));
+    }
+</script>
+{% endblock %}

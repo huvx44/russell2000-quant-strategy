@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}{{ folder }} - Results{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3><i class="bi bi-folder-check"></i> {{ folder }}</h3>
+    <div>
+        <a href="{{ url_for('results.export_excel', folder_name=folder) }}" class="btn btn-success">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <a href="{{ url_for('results.index') }}" class="btn btn-outline-light">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+{% if strategy_config %}
+<div class="card mb-3">
+    <div class="card-header">
+        <a class="text-decoration-none" data-bs-toggle="collapse" href="#configCollapse">
+            <i class="bi bi-gear"></i> Strategy Configuration <small class="text-muted">(click to expand)</small>
+        </a>
+    </div>
+    <div id="configCollapse" class="collapse">
+        <div class="card-body">
+            <div class="row">
+                {% for key, value in strategy_config.items() %}
+                <div class="col-md-3 col-sm-6 mb-2">
+                    <small class="text-muted">{{ key }}</small><br>
+                    <strong>{{ value }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Charts -->
+{% if chart_files %}
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-image"></i> Charts</h5></div>
+    <div class="card-body">
+        <ul class="nav nav-tabs" id="chartTabs">
+            {% for chart in chart_files %}
+            <li class="nav-item">
+                <a class="nav-link {% if loop.first %}active{% endif %}" data-bs-toggle="tab"
+                   href="#chart-{{ loop.index }}">
+                    {{ chart | replace('.png', '') | replace('_', ' ') | title }}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="tab-content mt-3">
+            {% for chart in chart_files %}
+            <div class="tab-pane {% if loop.first %}active{% endif %}" id="chart-{{ loop.index }}">
+                <img src="{{ url_for('results.serve_chart', folder_name=folder, filename=chart) }}"
+                     class="chart-img" alt="{{ chart }}">
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- CSV Files -->
+{% if csv_files %}
+<div class="card">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-table"></i> Data Files</h5></div>
+    <div class="card-body">
+        <ul class="nav nav-pills mb-3" id="csvTabs">
+            {% for csv in csv_files %}
+            <li class="nav-item">
+                <a class="nav-link {% if loop.first %}active{% endif %}" href="#"
+                   onclick="loadCsv('{{ csv }}', this); return false;">
+                    {{ csv | replace('.csv', '') | replace('_', ' ') | title }}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        <div id="csvTableArea">
+            <div class="text-center text-muted py-3">
+                <span class="spinner-border spinner-border-sm"></span> Loading...
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Auto-load first CSV
+    {% if csv_files %}
+    document.addEventListener('DOMContentLoaded', () => loadCsv('{{ csv_files[0] }}'));
+    {% endif %}
+
+    function loadCsv(filename, clickedTab) {
+        // Update active tab
+        if (clickedTab) {
+            document.querySelectorAll('#csvTabs .nav-link').forEach(t => t.classList.remove('active'));
+            clickedTab.classList.add('active');
+        }
+
+        const area = document.getElementById('csvTableArea');
+        area.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm"></span> Loading...</div>';
+
+        fetch(`/results/{{ folder }}/csv/${filename}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    area.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    return;
+                }
+                let html = `<div class="small text-muted mb-2">${filename} - ${data.total_rows} rows</div>`;
+                html += '<div class="table-responsive"><table class="table table-dark table-hover table-sm">';
+                html += '<thead><tr>';
+                data.columns.forEach(col => { html += `<th class="sortable" onclick="sortTable(this)">${col}</th>`; });
+                html += '</tr></thead><tbody>';
+                data.rows.forEach(row => {
+                    html += '<tr>';
+                    row.forEach((cell, i) => {
+                        let cls = '';
+                        const val = parseFloat(cell);
+                        if (!isNaN(val) && data.columns[i] && data.columns[i].match(/profit|pl|return|pct/i)) {
+                            cls = val >= 0 ? 'text-profit' : 'text-loss';
+                        }
+                        const display = cell === null ? '' : (typeof cell === 'number' ? (Number.isInteger(cell) ? cell : cell.toFixed(4)) : cell);
+                        html += `<td class="${cls}">${display}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table></div>';
+                area.innerHTML = html;
+            })
+            .catch(err => {
+                area.innerHTML = `<div class="alert alert-danger">Failed to load: ${err}</div>`;
+            });
+    }
+
+    function sortTable(th) {
+        const table = th.closest('table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const idx = Array.from(th.parentNode.children).indexOf(th);
+        const asc = !th.classList.contains('asc');
+
+        th.parentNode.querySelectorAll('th').forEach(t => t.classList.remove('asc', 'desc'));
+        th.classList.add(asc ? 'asc' : 'desc');
+
+        rows.sort((a, b) => {
+            let va = a.children[idx].textContent;
+            let vb = b.children[idx].textContent;
+            const na = parseFloat(va.replace(/[$,%]/g, ''));
+            const nb = parseFloat(vb.replace(/[$,%]/g, ''));
+            if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+
+        rows.forEach(r => tbody.appendChild(r));
+    }
+</script>
+{% endblock %}

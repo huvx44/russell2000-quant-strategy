@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Login - Quant Strategy{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-card text-center">
+        <h2 class="mb-1"><i class="bi bi-graph-up-arrow"></i></h2>
+        <h4 class="mb-4">R2K Quant Strategy</h4>
+
+        {% if has_passkeys and webauthn_available %}
+        <button id="passkeyBtn" class="btn btn-primary btn-lg w-100 mb-3" onclick="loginWithPasskey()">
+            <i class="bi bi-fingerprint"></i> Sign in with Passkey
+        </button>
+        <hr class="my-3">
+        <p class="text-muted small">Or sign in with password</p>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('auth.login') }}">
+            <div class="mb-3 text-start">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username"
+                       value="admin" required autofocus>
+            </div>
+            <div class="mb-3 text-start">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn btn-outline-light w-100">
+                <i class="bi bi-box-arrow-in-right"></i> Sign In
+            </button>
+        </form>
+
+        <div id="passkeyError" class="alert alert-danger mt-3 d-none"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if webauthn_available %}
+<script>
+async function loginWithPasskey() {
+    const btn = document.getElementById('passkeyBtn');
+    const errorDiv = document.getElementById('passkeyError');
+    errorDiv.classList.add('d-none');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Authenticating...';
+
+    try {
+        // Get authentication options from server
+        const optionsRes = await fetch('/auth/webauthn/login/begin', { method: 'POST' });
+        if (!optionsRes.ok) {
+            const err = await optionsRes.json();
+            throw new Error(err.error || 'Failed to get authentication options');
+        }
+        const options = await optionsRes.json();
+
+        // Decode challenge
+        options.challenge = base64urlToBuffer(options.challenge);
+
+        // Decode credential IDs
+        if (options.allowCredentials) {
+            options.allowCredentials = options.allowCredentials.map(c => ({
+                ...c,
+                id: base64urlToBuffer(c.id)
+            }));
+        }
+
+        // Call WebAuthn API
+        const credential = await navigator.credentials.get({ publicKey: options });
+
+        // Encode response for server
+        const body = {
+            id: credential.id,
+            rawId: bufferToBase64url(credential.rawId),
+            type: credential.type,
+            response: {
+                authenticatorData: bufferToBase64url(credential.response.authenticatorData),
+                clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+                signature: bufferToBase64url(credential.response.signature),
+                userHandle: credential.response.userHandle ?
+                    bufferToBase64url(credential.response.userHandle) : null
+            }
+        };
+
+        // Verify with server
+        const verifyRes = await fetch('/auth/webauthn/login/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        const result = await verifyRes.json();
+        if (result.success) {
+            window.location.href = result.redirect || '/';
+        } else {
+            throw new Error(result.error || 'Authentication failed');
+        }
+    } catch (e) {
+        errorDiv.textContent = e.message || 'Passkey authentication failed';
+        errorDiv.classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-fingerprint"></i> Sign in with Passkey';
+    }
+}
+
+function base64urlToBuffer(base64url) {
+    const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '=='.slice(0, (4 - base64.length % 4) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+}
+
+function bufferToBase64url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+</script>
+{% endif %}
+{% endblock %}

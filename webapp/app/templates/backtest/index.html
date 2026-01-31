@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Backtest - Quant Strategy{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-sliders"></i> Backtest Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form id="backtestForm">
+                    <div class="mb-3">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="startDate" value="2021-01-01">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="endDate">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Initial Balance ($)</label>
+                        <input type="number" class="form-control" id="initialBalance" value="100000" min="1000">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Rebalance Frequency</label>
+                        <select class="form-select" id="rebalFreq">
+                            <option value="Q" selected>Quarterly</option>
+                            <option value="M">Monthly</option>
+                        </select>
+                    </div>
+
+                    <hr>
+                    <h6>Portfolio Constraints</h6>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <label class="form-label small">Top N Stocks</label>
+                            <input type="number" class="form-control form-control-sm" id="topN" value="20" min="5" max="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Max Sector %</label>
+                            <input type="number" class="form-control form-control-sm" id="maxSector" value="30" min="10" max="100">
+                        </div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <label class="form-label small">Min Mkt Cap ($M)</label>
+                            <input type="number" class="form-control form-control-sm" id="minMcap" value="300">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Max Mkt Cap ($B)</label>
+                            <input type="number" class="form-control form-control-sm" id="maxMcap" value="10">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Min Avg Volume</label>
+                        <input type="number" class="form-control form-control-sm" id="minVolume" value="100000">
+                    </div>
+
+                    <hr>
+                    <h6>Factor Weights (%)</h6>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <label class="form-label small">Quality</label>
+                            <input type="number" class="form-control form-control-sm" id="qualityW" value="35" min="0" max="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Growth</label>
+                            <input type="number" class="form-control form-control-sm" id="growthW" value="35" min="0" max="100">
+                        </div>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <label class="form-label small">Value</label>
+                            <input type="number" class="form-control form-control-sm" id="valueW" value="15" min="0" max="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Momentum</label>
+                            <input type="number" class="form-control form-control-sm" id="momentumW" value="15" min="0" max="100">
+                        </div>
+                    </div>
+                    <div id="weightWarning" class="text-warning small d-none">
+                        <i class="bi bi-exclamation-triangle"></i> Weights should sum to 100%
+                    </div>
+
+                    <hr>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="forceRefresh">
+                        <label class="form-check-label" for="forceRefresh">Force refresh data (ignore cache)</label>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-primary" id="runBtn" onclick="startBacktest()">
+                            <i class="bi bi-play-fill"></i> Run Backtest
+                        </button>
+                        <button type="button" class="btn btn-outline-danger d-none" id="stopBtn" onclick="stopBacktest()">
+                            <i class="bi bi-stop-fill"></i> Stop
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-terminal"></i> Output</h5>
+                <span id="statusBadge" class="badge bg-secondary">Ready</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="outputArea" class="terminal-output" style="height: 700px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+    // Set default end date to today
+    document.getElementById('endDate').valueAsDate = new Date();
+
+    // Weight validation
+    ['qualityW', 'growthW', 'valueW', 'momentumW'].forEach(id => {
+        document.getElementById(id).addEventListener('input', validateWeights);
+    });
+
+    function validateWeights() {
+        const sum = ['qualityW', 'growthW', 'valueW', 'momentumW']
+            .reduce((s, id) => s + (parseInt(document.getElementById(id).value) || 0), 0);
+        const warn = document.getElementById('weightWarning');
+        warn.classList.toggle('d-none', sum === 100);
+    }
+
+    const socket = io();
+    const output = document.getElementById('outputArea');
+    const runBtn = document.getElementById('runBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const badge = document.getElementById('statusBadge');
+
+    socket.on('backtest_output', (data) => {
+        output.textContent += data.line;
+        output.scrollTop = output.scrollHeight;
+    });
+
+    socket.on('backtest_complete', (data) => {
+        runBtn.classList.remove('d-none');
+        runBtn.disabled = false;
+        stopBtn.classList.add('d-none');
+
+        if (data.success) {
+            badge.className = 'badge badge-complete';
+            badge.textContent = 'Complete';
+            output.textContent += '\n=== Backtest completed successfully ===\n';
+        } else {
+            badge.className = 'badge badge-error';
+            badge.textContent = 'Failed';
+            output.textContent += '\n=== ' + data.message + ' ===\n';
+        }
+        output.scrollTop = output.scrollHeight;
+    });
+
+    socket.on('backtest_error', (data) => {
+        runBtn.classList.remove('d-none');
+        runBtn.disabled = false;
+        stopBtn.classList.add('d-none');
+        badge.className = 'badge badge-error';
+        badge.textContent = 'Error';
+        output.textContent += '\nError: ' + data.error + '\n';
+        output.scrollTop = output.scrollHeight;
+    });
+
+    function startBacktest() {
+        output.textContent = '';
+        runBtn.classList.add('d-none');
+        stopBtn.classList.remove('d-none');
+        badge.className = 'badge badge-running';
+        badge.textContent = 'Running...';
+
+        const config = {
+            refresh: document.getElementById('forceRefresh').checked,
+            start_date: document.getElementById('startDate').value,
+            end_date: document.getElementById('endDate').value,
+            initial_balance: document.getElementById('initialBalance').value,
+            rebalance_freq: document.getElementById('rebalFreq').value,
+            top_n: document.getElementById('topN').value,
+            max_sector_weight: (parseInt(document.getElementById('maxSector').value) / 100).toString(),
+            min_market_cap: (parseInt(document.getElementById('minMcap').value) * 1e6).toString(),
+            max_market_cap: (parseInt(document.getElementById('maxMcap').value) * 1e9).toString(),
+            min_avg_volume: document.getElementById('minVolume').value,
+            quality_weight: (parseInt(document.getElementById('qualityW').value) / 100).toString(),
+            growth_weight: (parseInt(document.getElementById('growthW').value) / 100).toString(),
+            value_weight: (parseInt(document.getElementById('valueW').value) / 100).toString(),
+            momentum_weight: (parseInt(document.getElementById('momentumW').value) / 100).toString(),
+        };
+
+        socket.emit('start_backtest', config);
+    }
+
+    function stopBacktest() {
+        socket.emit('stop_backtest');
+    }
+</script>
+{% endblock %}

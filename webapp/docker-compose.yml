@@ -1,0 +1,17 @@
+services:
+  quant-app:
+    build:
+      context: ..
+      dockerfile: webapp/Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production-use-a-random-string}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - RP_ID=${RP_ID:-localhost}
+      - RP_NAME=${RP_NAME:-R2K Quant Strategy}
+      - RP_ORIGIN=${RP_ORIGIN:-http://localhost:5000}
+    restart: unless-stopped
+    mem_limit: 2g
