@@ -83,6 +83,30 @@ class QuantStrategyGUI:
         control_frame = ttk.LabelFrame(tab, text="Options", padding=10)
         control_frame.pack(fill='x', padx=20, pady=10)
 
+        # Strategy Selection
+        strategy_frame = ttk.Frame(control_frame)
+        strategy_frame.pack(fill='x', pady=5)
+        ttk.Label(strategy_frame, text="Strategy:", font=('Arial', 10, 'bold')).pack(side='left')
+        self.strategy_var = tk.StringVar(value="russell2000")
+
+        strategy_combo = ttk.Combobox(strategy_frame, textvariable=self.strategy_var,
+                                      state='readonly', width=40)
+        strategy_combo['values'] = (
+            'Russell 2000 Quality+Growth (russell2000_backtest.py)',
+            'Alpha Stack Multi-Anomaly (temp_strategy/alpha_stack_backtest.py)'
+        )
+        strategy_combo.current(0)
+        strategy_combo.pack(side='left', padx=10)
+
+        # Bind selection event to update description
+        strategy_combo.bind('<<ComboboxSelected>>', self.on_strategy_change)
+
+        # Strategy description
+        self.strategy_desc_label = ttk.Label(control_frame, text="", font=('Arial', 9),
+                                            foreground='#555', wraplength=600, justify='left')
+        self.strategy_desc_label.pack(anchor='w', pady=5, padx=20)
+        self.update_strategy_description()
+
         # Refresh checkbox
         self.backtest_refresh_var = tk.BooleanVar(value=False)
         refresh_check = ttk.Checkbutton(control_frame, text="Force Refresh Data (ignore cache)",
@@ -480,6 +504,26 @@ class QuantStrategyGUI:
         # Initial update
         self.update_portfolio_display()
 
+    def on_strategy_change(self, event=None):
+        """Update strategy description when selection changes"""
+        self.update_strategy_description()
+
+    def update_strategy_description(self):
+        """Update the strategy description label"""
+        strategy = self.strategy_var.get()
+
+        descriptions = {
+            'russell2000': '퀄리티 + 성장성 복합 전략. ROE, 매출성장률, 수익성 중심으로 재무 건전성과 성장 가능성이 높은 소형주 선별.',
+            'alpha_stack': '4개 레이어 알파 스택 전략: (1) PEAD 어닝 서프라이즈, (2) 내부자 매수 신호, (3) 저커버리지 프리미엄, (4) 퀄리티+밸류 안전장치. 학술적으로 검증된 소형주 비효율성 극대화.'
+        }
+
+        if 'alpha_stack' in strategy.lower() or 'alpha stack' in strategy.lower():
+            desc = descriptions['alpha_stack']
+        else:
+            desc = descriptions['russell2000']
+
+        self.strategy_desc_label.config(text=f"📝 {desc}")
+
     def save_config_preset(self):
         """Save current configuration as a preset"""
         import json
@@ -734,7 +778,14 @@ class QuantStrategyGUI:
             self.backtest_output.delete(1.0, tk.END)
 
             try:
-                cmd = ['python', 'russell2000_backtest.py']
+                # Select script based on strategy selection
+                strategy_selection = self.strategy_var.get()
+                if 'alpha_stack' in strategy_selection.lower() or 'alpha stack' in strategy_selection.lower():
+                    script = 'temp_strategy/alpha_stack_backtest.py'
+                else:
+                    script = 'russell2000_backtest.py'
+
+                cmd = ['python', script]
                 if self.backtest_refresh_var.get():
                     cmd.append('--refresh')
 
