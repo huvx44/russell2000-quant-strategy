@@ -34,17 +34,22 @@ CONFIG = {
     'SAMPLE_SIZE': 300,           # 테스트용 샘플 (전체: None)
     'MIN_MARKET_CAP': 2e8,        # $200M 하한
     'MIN_AVG_VOLUME': 5e5,        # 일평균 $500K 거래대금
-    
+
     # Backtest Period
     'START_DATE': '2021-01-01',
     'END_DATE': '2024-12-31',
-    
+
     # Portfolio
     'TOP_N': 35,                  # 포트폴리오 종목 수
     'REBALANCE_FREQ': 'monthly',  # monthly or quarterly
     'MAX_SECTOR_PCT': 0.25,       # 섹터당 최대 비중
     'MAX_STOCK_PCT': 0.04,        # 개별 종목 최대
-    
+
+    # Caching
+    'CACHE_FILE': 'alpha_stack_cache.pkl',  # 캐시 파일명
+    'CACHE_DAYS': 7,              # 캐시 유효 기간 (일)
+    'FORCE_REFRESH': False,       # True = 캐시 무시하고 새로 다운로드
+
     # Scoring Weights
     'W_PEAD': 0.40,               # PEAD Score 가중치
     'W_INSIDER': 0.30,            # Insider Signal 가중치
@@ -560,6 +565,39 @@ def load_tickers(filepath=None):
     return df
 
 
+def load_cache(cache_file, max_age_days):
+    """캐시 파일 로드"""
+    if not os.path.exists(cache_file):
+        return None
+
+    import pickle
+    file_age_days = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_file))).days
+
+    if file_age_days > max_age_days:
+        print(f"⚠️  캐시 파일이 {file_age_days}일 경과하여 만료됨 (최대 {max_age_days}일)")
+        return None
+
+    try:
+        with open(cache_file, 'rb') as f:
+            data = pickle.load(f)
+        print(f"✅ 캐시 로드 성공: {cache_file} ({file_age_days}일 전)")
+        return data
+    except Exception as e:
+        print(f"⚠️  캐시 로드 실패: {e}")
+        return None
+
+
+def save_cache(data, cache_file):
+    """캐시 파일 저장"""
+    import pickle
+    try:
+        with open(cache_file, 'wb') as f:
+            pickle.dump(data, f)
+        print(f"✅ 캐시 저장 완료: {cache_file}")
+    except Exception as e:
+        print(f"⚠️  캐시 저장 실패: {e}")
+
+
 def fetch_stock_data(tickers, period='2y'):
     """주가 및 기본 정보 다운로드"""
     ticker_data = {}
@@ -860,6 +898,13 @@ def create_charts(portfolio_returns, benchmark_returns, portfolio_df, output_dir
 # ═══════════════════════════════════════════════════════════
 
 def main():
+    import sys
+
+    # 커맨드 라인 인자 처리
+    if '--refresh' in sys.argv or '-r' in sys.argv:
+        CONFIG['FORCE_REFRESH'] = True
+        print("강제 새로고침 모드\n")
+
     print("═" * 70)
     print("  🚀 Alpha Stack: Russell 2000 Multi-Anomaly 전략 백테스트")
     print("  ── 4-Layer Alpha Stacking Strategy ──")
@@ -883,10 +928,20 @@ def main():
         np.random.seed(42)
         tickers = list(np.random.choice(tickers, CONFIG['SAMPLE_SIZE'], replace=False))
         print(f"\n  ⚡ {CONFIG['SAMPLE_SIZE']}개 샘플로 테스트")
-    
-    # 2. 데이터 다운로드
-    ticker_data = fetch_stock_data(tickers)
-    
+
+    # 2. 데이터 다운로드 (캐시 사용)
+    ticker_data = None
+
+    if not CONFIG['FORCE_REFRESH']:
+        ticker_data = load_cache(CONFIG['CACHE_FILE'], CONFIG['CACHE_DAYS'])
+
+    if ticker_data is None:
+        print("\n📥 새로운 데이터 다운로드 중...")
+        ticker_data = fetch_stock_data(tickers)
+        save_cache(ticker_data, CONFIG['CACHE_FILE'])
+    else:
+        print("✅ 캐시된 데이터 사용")
+
     if len(ticker_data) < 20:
         print(f"❌ 충분한 데이터 없음 ({len(ticker_data)}개)")
         return
