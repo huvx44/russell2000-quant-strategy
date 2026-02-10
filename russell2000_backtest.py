@@ -501,7 +501,23 @@ def run_backtest(stock_data, factors_df, start_date, end_date,
     # Initial portfolio value (normalized to 1)
     portfolio_value = 1.0
 
+    # Progress tracking
+    total_rebalances = len(rebal_dates)
+    print(f"\n{'─' * 70}")
+    print(f"📊 리밸런싱 진행 상황")
+    print(f"{'─' * 70}")
+    print(f"   총 리밸런싱 횟수: {total_rebalances}회")
+    print(f"   리밸런싱 주기: {'분기별' if rebalance_freq == 'Q' else '월별'}")
+    print(f"   진행:")
+
     for i, date in enumerate(rebal_dates):
+        # Progress indicator
+        progress_pct = (i + 1) / total_rebalances * 100
+        date_str = date.strftime('%Y-%m-%d')
+
+        # Show progress for every rebalance
+        print(f"   [{i+1:3d}/{total_rebalances}] {progress_pct:5.1f}% | {date_str} ", end='', flush=True)
+
         # 기간 설정
         if i < len(rebal_dates) - 1:
             next_date = rebal_dates[i + 1]
@@ -511,6 +527,7 @@ def run_backtest(stock_data, factors_df, start_date, end_date,
         period_returns = returns_df[(returns_df.index >= date) & (returns_df.index < next_date)]
 
         if period_returns.empty:
+            print("⊘ 데이터 없음")
             continue
 
         # 포트폴리오 선정
@@ -524,7 +541,11 @@ def run_backtest(stock_data, factors_df, start_date, end_date,
         valid_holdings = [t for t in current_holdings if t in period_returns.columns]
 
         if len(valid_holdings) < 5:
+            print(f"⚠ 종목 부족 ({len(valid_holdings)}개)")
             continue
+
+        # Show selected holdings count
+        print(f"✓ {len(valid_holdings):2d}개 종목", end='', flush=True)
 
         # Get entry prices (first available price at or after rebalance date)
         entry_prices = {}
@@ -563,6 +584,9 @@ def run_backtest(stock_data, factors_df, start_date, end_date,
         if prev_holdings:
             turnover = len(current_set.symmetric_difference(prev_holdings)) / (2 * len(current_set))
             turnover_list.append(turnover)
+            print(f" | 교체율: {turnover:5.1%}")
+        else:
+            print(f" | 초기 구성")
         prev_holdings = current_set
 
         # Calculate exit info for previous holdings
@@ -627,11 +651,19 @@ def run_backtest(stock_data, factors_df, start_date, end_date,
                         holding_info['profit_pct'] = (holding_info['exit_price'] / holding_info['entry_price'] - 1) * 100
             holdings_history.append(holding_info.copy())
 
+    # Combine results
     portfolio_series = pd.concat(portfolio_returns)
     benchmark_series = pd.concat(benchmark_returns)
-    
+
+    # Completion summary
+    print(f"\n{'─' * 70}")
+    print(f"✅ 리밸런싱 완료")
+    print(f"{'─' * 70}")
+    print(f"   총 리밸런싱: {len(rebal_dates)}회")
+    print(f"   보유 기록: {len(holdings_history)}개 포지션")
     avg_turnover = np.mean(turnover_list) if turnover_list else 0
-    print(f"  - 평균 회전율: {avg_turnover:.1%}")
+    print(f"   평균 교체율: {avg_turnover:.1%}")
+    print(f"   백테스트 기간: {len(portfolio_series)}일")
     
     return portfolio_series, benchmark_series, holdings_history
 
