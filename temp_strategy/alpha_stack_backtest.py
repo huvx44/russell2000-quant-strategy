@@ -767,10 +767,16 @@ def print_results(strategy_metrics, benchmark_metrics, portfolio_df):
 def create_charts(portfolio_returns, benchmark_returns, portfolio_df, output_dir='.'):
     """결과 차트 생성"""
     try:
+        # Remove timezone to avoid comparison issues
+        if portfolio_returns.index.tz is not None:
+            portfolio_returns.index = portfolio_returns.index.tz_localize(None)
+        if benchmark_returns.index.tz is not None:
+            benchmark_returns.index = benchmark_returns.index.tz_localize(None)
+
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-        
+
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
         fig.suptitle('Alpha Stack: Russell 2000 Multi-Anomaly Strategy', 
                      fontsize=16, fontweight='bold', y=0.98)
