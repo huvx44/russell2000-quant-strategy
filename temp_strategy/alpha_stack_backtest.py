@@ -568,22 +568,29 @@ def load_tickers(filepath=None):
 def load_cache(cache_file, max_age_days):
     """캐시 파일 로드"""
     if not os.path.exists(cache_file):
+        print(f"   캐시 파일 없음: {cache_file}")
         return None
 
     import pickle
     file_age_days = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_file))).days
+    file_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
 
     if file_age_days > max_age_days:
-        print(f"⚠️  캐시 파일이 {file_age_days}일 경과하여 만료됨 (최대 {max_age_days}일)")
+        print(f"   ⚠️  캐시 만료: {file_age_days}일 경과 (최대 {max_age_days}일)")
         return None
 
     try:
+        print(f"   📂 캐시 파일 발견: {cache_file}")
+        print(f"      크기: {file_size_mb:.1f} MB | 생성: {file_age_days}일 전")
+        print(f"   ⏳ 캐시 로딩 중...")
+
         with open(cache_file, 'rb') as f:
             data = pickle.load(f)
-        print(f"✅ 캐시 로드 성공: {cache_file} ({file_age_days}일 전)")
+
+        print(f"   ✅ 캐시 로드 완료: {len(data)}개 종목 데이터")
         return data
     except Exception as e:
-        print(f"⚠️  캐시 로드 실패: {e}")
+        print(f"   ⚠️  캐시 로드 실패: {e}")
         return None
 
 
@@ -591,62 +598,87 @@ def save_cache(data, cache_file):
     """캐시 파일 저장"""
     import pickle
     try:
+        print(f"\n💾 캐시 저장 중: {len(data)}개 종목...")
         with open(cache_file, 'wb') as f:
             pickle.dump(data, f)
-        print(f"✅ 캐시 저장 완료: {cache_file}")
+
+        file_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
+        print(f"   ✅ 저장 완료: {cache_file} ({file_size_mb:.1f} MB)")
+        print(f"   유효기간: {CONFIG['CACHE_DAYS']}일")
     except Exception as e:
-        print(f"⚠️  캐시 저장 실패: {e}")
+        print(f"   ⚠️  캐시 저장 실패: {e}")
 
 
 def fetch_stock_data(tickers, period='2y'):
     """주가 및 기본 정보 다운로드"""
     ticker_data = {}
     total = len(tickers)
-    
-    print(f"\n📊 {total}개 종목 데이터 다운로드 중...")
-    
+    start_time = time.time()
+
+    print(f"\n📊 {total}개 종목 데이터 다운로드 시작...")
+    print(f"   예상 소요 시간: ~{total * 0.15 / 60:.1f}분 (평균 0.15초/종목)")
+    print(f"   진행 상황:")
+
     for i, ticker in enumerate(tickers):
-        if (i + 1) % 20 == 0:
-            print(f"   진행: {i+1}/{total} ({(i+1)/total*100:.0f}%)")
-        
+        # Show progress every 10 stocks or at milestones
+        if (i + 1) % 10 == 0 or (i + 1) in [1, 5, total]:
+            elapsed = time.time() - start_time
+            progress_pct = (i + 1) / total * 100
+            valid_count = len(ticker_data)
+
+            # Calculate ETA
+            if i > 0:
+                avg_time_per_stock = elapsed / (i + 1)
+                remaining_stocks = total - (i + 1)
+                eta_seconds = avg_time_per_stock * remaining_stocks
+                eta_min = eta_seconds / 60
+
+                print(f"   [{i+1:4d}/{total}] {progress_pct:5.1f}% | "
+                      f"유효: {valid_count:3d} | "
+                      f"경과: {elapsed/60:4.1f}분 | "
+                      f"남은시간: ~{eta_min:4.1f}분")
+            else:
+                print(f"   [{i+1:4d}/{total}] {progress_pct:5.1f}% | 유효: {valid_count:3d}")
+
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period=period)
-            
+
             if hist is None or len(hist) < 60:
                 continue
-            
+
             info = {}
             try:
                 info = stock.info
             except:
                 pass
-            
+
             # 시가총액 & 거래량 필터
             market_cap = info.get('marketCap', 0) or 0
             avg_volume = info.get('averageVolume', 0) or 0
             current_price = hist['Close'].iloc[-1] if len(hist) > 0 else 0
             avg_dollar_volume = avg_volume * current_price
-            
+
             if market_cap < CONFIG['MIN_MARKET_CAP']:
                 continue
             if avg_dollar_volume < CONFIG['MIN_AVG_VOLUME']:
                 continue
-            
+
             ticker_data[ticker] = {
                 'stock_obj': stock,
                 'history': hist,
                 'info': info,
                 'market_cap': market_cap,
             }
-            
+
             # Rate limiting
             time.sleep(0.1)
-            
+
         except Exception as e:
             continue
-    
-    print(f"   ✅ {len(ticker_data)}개 종목 데이터 확보")
+
+    elapsed_total = time.time() - start_time
+    print(f"\n   ✅ 완료: {len(ticker_data)}개 종목 데이터 확보 (총 {elapsed_total/60:.1f}분 소요)")
     return ticker_data
 
 
@@ -930,17 +962,28 @@ def main():
         print(f"\n  ⚡ {CONFIG['SAMPLE_SIZE']}개 샘플로 테스트")
 
     # 2. 데이터 다운로드 (캐시 사용)
+    print("\n" + "─" * 70)
+    print("📦 데이터 로딩")
+    print("─" * 70)
+
     ticker_data = None
 
     if not CONFIG['FORCE_REFRESH']:
+        print(f"🔍 캐시 파일 확인: {CONFIG['CACHE_FILE']}")
         ticker_data = load_cache(CONFIG['CACHE_FILE'], CONFIG['CACHE_DAYS'])
 
     if ticker_data is None:
-        print("\n📥 새로운 데이터 다운로드 중...")
+        if CONFIG['FORCE_REFRESH']:
+            print("🔄 강제 새로고침: 캐시를 무시하고 새 데이터를 다운로드합니다...")
+        else:
+            print("📥 캐시 없음: 새 데이터를 다운로드합니다...")
+        print(f"   대상 종목 수: {len(tickers)}개")
         ticker_data = fetch_stock_data(tickers)
         save_cache(ticker_data, CONFIG['CACHE_FILE'])
     else:
-        print("✅ 캐시된 데이터 사용")
+        print(f"✅ 캐시된 데이터 사용 ({len(ticker_data)}개 종목)")
+        print(f"   다음 새로고침까지: {CONFIG['CACHE_DAYS']}일 이내")
+        print(f"   강제 새로고침: --refresh 플래그 사용")
 
     if len(ticker_data) < 20:
         print(f"❌ 충분한 데이터 없음 ({len(ticker_data)}개)")
